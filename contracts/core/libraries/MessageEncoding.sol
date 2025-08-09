@@ -1,429 +1,493 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.20;
+
+import "./DataTypes.sol";
 
 /**
  * @title MessageEncoding
- * @dev Library for encoding and decoding cross-chain messages in the DeFi yield farming protocol
- * @dev Provides standardized message formats for communication between C-Chain and subnets
+ * @notice Handles encoding and decoding of messages for Avalanche Warp Messaging (AWM)
+ * @dev Provides secure serialization for cross-chain communication
  */
 library MessageEncoding {
     
-    // Message Types
-    uint8 public constant YIELD_REQUEST = 1;
-    uint8 public constant YIELD_RESPONSE = 2;
-    uint8 public constant PROTOCOL_UPDATE = 3;
-    uint8 public constant STAKE_REQUEST = 4;
-    uint8 public constant STAKE_RESPONSE = 5;
+    // ============ CONSTANTS ============
     
-    // Errors
-    error InvalidMessageType(uint8 messageType);
-    error InvalidMessageLength(uint256 length);
-    error DecodingFailed(bytes data);
+    // Message type identifiers
+    bytes32 private constant YIELD_REQUEST_TYPE = keccak256("YIELD_REQUEST_V1");
+    bytes32 private constant YIELD_RESPONSE_TYPE = keccak256("YIELD_RESPONSE_V1");
+    bytes32 private constant BATCH_REQUEST_TYPE = keccak256("BATCH_REQUEST_V1");
+    bytes32 private constant PROTOCOL_UPDATE_TYPE = keccak256("PROTOCOL_UPDATE_V1");
     
+    // Version identifiers
+    uint256 private constant CURRENT_VERSION = 1;
+    uint256 private constant MIN_SUPPORTED_VERSION = 1;
+    uint256 private constant MAX_SUPPORTED_VERSION = 1;
+
+    // Message size limits
+    uint256 private constant MAX_MESSAGE_SIZE = 32 * 1024; // 32KB
+    uint256 private constant MIN_MESSAGE_SIZE = 64; // Minimum viable message
+    
+    // ============ ERRORS ============
+    
+    error InvalidMessageType();
+    error UnsupportedVersion();
+    error MessageTooLarge();
+    error MessageTooSmall();
+    error InvalidMessageFormat();
+    error DecodingError();
+    error EncodingError();
+
+    // ============ STRUCTS ============
+
     /**
-     * @dev Structure for yield request messages
+     * @notice Message header for all AWM messages
      */
-    struct YieldRequest {
-        bytes32 requestId;
-        address token;
-        address responseContract;
-        uint256 timestamp;
+    struct MessageHeader {
+        bytes32 messageType;   // Type of message
+        uint256 version;       // Protocol version
+        uint256 timestamp;     // Message creation timestamp
+        bytes32 sender;        // Sender identifier
+        bytes32 nonce;         // Unique message nonce
     }
-    
+
     /**
-     * @dev Structure for yield response messages
+     * @notice Complete message structure
      */
-    struct YieldResponse {
-        bytes32 requestId;
-        address token;
-        uint256 apy;
-        uint256 tvl;
-        string protocolName;
-        uint256 timestamp;
+    struct Message {
+        MessageHeader header;  // Message metadata
+        bytes payload;         // Encoded message data
+        bytes32 checksum;      // Message integrity check
     }
-    
+
+    // ============ ENCODING FUNCTIONS ============
+
     /**
-     * @dev Structure for protocol update messages
-     */
-    struct ProtocolUpdate {
-        address protocol;
-        address[] tokens;
-        uint256[] apyValues;
-        uint256 timestamp;
-    }
-    
-    /**
-     * @dev Structure for stake request messages
-     */
-    struct StakeRequest {
-        bytes32 requestId;
-        address user;
-        address token;
-        uint256 amount;
-        address targetProtocol;
-        uint256 timestamp;
-    }
-    
-    /**
-     * @dev Structure for stake response messages
-     */
-    struct StakeResponse {
-        bytes32 requestId;
-        bool success;
-        uint256 sharesReceived;
-        uint256 timestamp;
-        string errorMessage;
-    }
-    
-    /**
-     * @dev Encode a yield request message
+     * @notice Encodes a YieldRequest for cross-chain transmission
      * @param request The yield request to encode
-     * @return encoded The encoded message bytes
+     * @return encodedMessage The encoded message bytes
      */
-    function encodeYieldRequest(YieldRequest memory request) 
-        external 
-        pure 
-        returns (bytes memory encoded) 
+    function encodeYieldRequest(DataTypes.YieldRequest memory request) 
+        internal 
+        view 
+        returns (bytes memory encodedMessage) 
     {
-        return abi.encode(
-            YIELD_REQUEST,
-            request.requestId,
-            request.token,
-            request.responseContract,
-            request.timestamp
-        );
-    }
-    
-    /**
-     * @dev Decode a yield request message
-     * @param data The encoded message bytes
-     * @return request The decoded yield request
-     */
-    function decodeYieldRequest(bytes memory data) 
-        external 
-        pure 
-        returns (YieldRequest memory request) 
-    {
-        if (data.length == 0) {
-            revert InvalidMessageLength(data.length);
-        }
+        // Validate input
+        require(DataTypes.isValidRequest(request), "Invalid request");
         
-        try this._decodeYieldRequest(data) returns (YieldRequest memory decoded) {
-            return decoded;
-        } catch {
-            revert DecodingFailed(data);
-        }
-    }
-    
-    /**
-     * @dev Internal function for yield request decoding
-     * @param data The encoded message bytes
-     * @return request The decoded yield request
-     */
-    function _decodeYieldRequest(bytes memory data) 
-        external 
-        pure 
-        returns (YieldRequest memory request) 
-    {
-        (
-            uint8 messageType,
-            bytes32 requestId,
-            address token,
-            address responseContract,
-            uint256 timestamp
-        ) = abi.decode(data, (uint8, bytes32, address, address, uint256));
-        
-        if (messageType != YIELD_REQUEST) {
-            revert InvalidMessageType(messageType);
-        }
-        
-        request = YieldRequest({
-            requestId: requestId,
-            token: token,
-            responseContract: responseContract,
-            timestamp: timestamp
+        // Create message header
+        MessageHeader memory header = MessageHeader({
+            messageType: YIELD_REQUEST_TYPE,
+            version: CURRENT_VERSION,
+            timestamp: block.timestamp,
+            sender: bytes32(uint256(uint160(request.requester))),
+            nonce: request.requestId
         });
+        
+        // Encode the payload
+        bytes memory payload = abi.encode(
+            request.token,
+            request.requester,
+            request.timestamp,
+            request.requestId
+        );
+        
+        // Create complete message
+        Message memory message = Message({
+            header: header,
+            payload: payload,
+            checksum: _calculateChecksum(header, payload)
+        });
+        
+        // Encode the complete message
+        encodedMessage = abi.encode(message);
+        
+        // Validate size
+        if (encodedMessage.length > MAX_MESSAGE_SIZE) revert MessageTooLarge();
+        if (encodedMessage.length < MIN_MESSAGE_SIZE) revert MessageTooSmall();
+        
+        return encodedMessage;
     }
-    
+
     /**
-     * @dev Encode a yield response message
+     * @notice Encodes a YieldResponse for cross-chain transmission
      * @param response The yield response to encode
-     * @return encoded The encoded message bytes
+     * @return encodedMessage The encoded message bytes
      */
-    function encodeYieldResponse(YieldResponse memory response) 
-        external 
-        pure 
-        returns (bytes memory encoded) 
+    function encodeYieldResponse(DataTypes.YieldResponse memory response) 
+        internal 
+        view 
+        returns (bytes memory encodedMessage) 
     {
-        return abi.encode(
-            YIELD_RESPONSE,
+        // Validate input
+        require(DataTypes.isValidResponse(response), "Invalid response");
+        
+        // Create message header
+        MessageHeader memory header = MessageHeader({
+            messageType: YIELD_RESPONSE_TYPE,
+            version: CURRENT_VERSION,
+            timestamp: block.timestamp,
+            sender: bytes32(0), // Will be set by sender
+            nonce: response.requestId
+        });
+        
+        // Encode the payload
+        bytes memory payload = abi.encode(
             response.requestId,
-            response.token,
-            response.apy,
+            response.apyBps,
             response.tvl,
-            response.protocolName,
-            response.timestamp
-        );
-    }
-    
-    /**
-     * @dev Decode a yield response message
-     * @param data The encoded message bytes
-     * @return response The decoded yield response
-     */
-    function decodeYieldResponse(bytes memory data) 
-        external 
-        pure 
-        returns (YieldResponse memory response) 
-    {
-        if (data.length == 0) {
-            revert InvalidMessageLength(data.length);
-        }
-        
-        try this._decodeYieldResponse(data) returns (YieldResponse memory decoded) {
-            return decoded;
-        } catch {
-            revert DecodingFailed(data);
-        }
-    }
-    
-    /**
-     * @dev Internal function for yield response decoding
-     * @param data The encoded message bytes
-     * @return response The decoded yield response
-     */
-    function _decodeYieldResponse(bytes memory data) 
-        external 
-        pure 
-        returns (YieldResponse memory response) 
-    {
-        (
-            uint8 messageType,
-            bytes32 requestId,
-            address token,
-            uint256 apy,
-            uint256 tvl,
-            string memory protocolName,
-            uint256 timestamp
-        ) = abi.decode(data, (uint8, bytes32, address, uint256, uint256, string, uint256));
-        
-        if (messageType != YIELD_RESPONSE) {
-            revert InvalidMessageType(messageType);
-        }
-        
-        response = YieldResponse({
-            requestId: requestId,
-            token: token,
-            apy: apy,
-            tvl: tvl,
-            protocolName: protocolName,
-            timestamp: timestamp
-        });
-    }
-    
-    /**
-     * @dev Encode a protocol update message
-     * @param update The protocol update to encode
-     * @return encoded The encoded message bytes
-     */
-    function encodeProtocolUpdate(ProtocolUpdate memory update) 
-        external 
-        pure 
-        returns (bytes memory encoded) 
-    {
-        return abi.encode(
-            PROTOCOL_UPDATE,
-            update.protocol,
-            update.tokens,
-            update.apyValues,
-            update.timestamp
-        );
-    }
-    
-    /**
-     * @dev Decode a protocol update message
-     * @param data The encoded message bytes
-     * @return update The decoded protocol update
-     */
-    function decodeProtocolUpdate(bytes memory data) 
-        external 
-        pure 
-        returns (ProtocolUpdate memory update) 
-    {
-        if (data.length == 0) {
-            revert InvalidMessageLength(data.length);
-        }
-        
-        (
-            uint8 messageType,
-            address protocol,
-            address[] memory tokens,
-            uint256[] memory apyValues,
-            uint256 timestamp
-        ) = abi.decode(data, (uint8, address, address[], uint256[], uint256));
-        
-        if (messageType != PROTOCOL_UPDATE) {
-            revert InvalidMessageType(messageType);
-        }
-        
-        update = ProtocolUpdate({
-            protocol: protocol,
-            tokens: tokens,
-            apyValues: apyValues,
-            timestamp: timestamp
-        });
-    }
-    
-    /**
-     * @dev Get message type from encoded data
-     * @param data The encoded message bytes
-     * @return messageType The message type
-     */
-    function getMessageType(bytes memory data) 
-        external 
-        pure 
-        returns (uint8 messageType) 
-    {
-        if (data.length < 32) {
-            revert InvalidMessageLength(data.length);
-        }
-        
-        (messageType) = abi.decode(data, (uint8));
-    }
-    
-    /**
-     * @dev Encode a stake request message
-     * @param request The stake request to encode
-     * @return encoded The encoded message bytes
-     */
-    function encodeStakeRequest(StakeRequest memory request) 
-        external 
-        pure 
-        returns (bytes memory encoded) 
-    {
-        return abi.encode(
-            STAKE_REQUEST,
-            request.requestId,
-            request.user,
-            request.token,
-            request.amount,
-            request.targetProtocol,
-            request.timestamp
-        );
-    }
-    
-    /**
-     * @dev Decode a stake request message
-     * @param data The encoded message bytes
-     * @return request The decoded stake request
-     */
-    function decodeStakeRequest(bytes memory data) 
-        external 
-        pure 
-        returns (StakeRequest memory request) 
-    {
-        if (data.length == 0) {
-            revert InvalidMessageLength(data.length);
-        }
-        
-        (
-            uint8 messageType,
-            bytes32 requestId,
-            address user,
-            address token,
-            uint256 amount,
-            address targetProtocol,
-            uint256 timestamp
-        ) = abi.decode(data, (uint8, bytes32, address, address, uint256, address, uint256));
-        
-        if (messageType != STAKE_REQUEST) {
-            revert InvalidMessageType(messageType);
-        }
-        
-        request = StakeRequest({
-            requestId: requestId,
-            user: user,
-            token: token,
-            amount: amount,
-            targetProtocol: targetProtocol,
-            timestamp: timestamp
-        });
-    }
-    
-    /**
-     * @dev Encode a stake response message
-     * @param response The stake response to encode
-     * @return encoded The encoded message bytes
-     */
-    function encodeStakeResponse(StakeResponse memory response) 
-        external 
-        pure 
-        returns (bytes memory encoded) 
-    {
-        return abi.encode(
-            STAKE_RESPONSE,
-            response.requestId,
-            response.success,
-            response.sharesReceived,
+            response.protocol,
             response.timestamp,
+            response.success,
             response.errorMessage
         );
-    }
-    
-    /**
-     * @dev Decode a stake response message
-     * @param data The encoded message bytes
-     * @return response The decoded stake response
-     */
-    function decodeStakeResponse(bytes memory data) 
-        external 
-        pure 
-        returns (StakeResponse memory response) 
-    {
-        if (data.length == 0) {
-            revert InvalidMessageLength(data.length);
-        }
         
-        (
-            uint8 messageType,
-            bytes32 requestId,
-            bool success,
-            uint256 sharesReceived,
-            uint256 timestamp,
-            string memory errorMessage
-        ) = abi.decode(data, (uint8, bytes32, bool, uint256, uint256, string));
-        
-        if (messageType != STAKE_RESPONSE) {
-            revert InvalidMessageType(messageType);
-        }
-        
-        response = StakeResponse({
-            requestId: requestId,
-            success: success,
-            sharesReceived: sharesReceived,
-            timestamp: timestamp,
-            errorMessage: errorMessage
+        // Create complete message
+        Message memory message = Message({
+            header: header,
+            payload: payload,
+            checksum: _calculateChecksum(header, payload)
         });
+        
+        // Encode the complete message
+        encodedMessage = abi.encode(message);
+        
+        // Validate size
+        if (encodedMessage.length > MAX_MESSAGE_SIZE) revert MessageTooLarge();
+        if (encodedMessage.length < MIN_MESSAGE_SIZE) revert MessageTooSmall();
+        
+        return encodedMessage;
     }
-    
+
     /**
-     * @dev Validate message format
-     * @param data The encoded message bytes
-     * @return isValid Whether the message format is valid
+     * @notice Encodes a batch request for multiple tokens
+     * @param tokens Array of token addresses
+     * @param requester Address making the request
+     * @param batchId Unique batch identifier
+     * @return encodedMessage The encoded message bytes
      */
-    function validateMessage(bytes memory data) 
-        external 
+    function encodeBatchRequest(
+        address[] memory tokens,
+        address requester,
+        bytes32 batchId
+    ) internal view returns (bytes memory encodedMessage) {
+        require(tokens.length > 0, "Empty token array");
+        require(tokens.length <= DataTypes.MAX_BATCH_SIZE, "Batch too large");
+        require(requester != address(0), "Invalid requester");
+        require(batchId != bytes32(0), "Invalid batch ID");
+        
+        // Create message header
+        MessageHeader memory header = MessageHeader({
+            messageType: BATCH_REQUEST_TYPE,
+            version: CURRENT_VERSION,
+            timestamp: block.timestamp,
+            sender: bytes32(uint256(uint160(requester))),
+            nonce: batchId
+        });
+        
+        // Encode the payload
+        bytes memory payload = abi.encode(
+            tokens,
+            requester,
+            block.timestamp,
+            batchId
+        );
+        
+        // Create complete message
+        Message memory message = Message({
+            header: header,
+            payload: payload,
+            checksum: _calculateChecksum(header, payload)
+        });
+        
+        // Encode the complete message
+        encodedMessage = abi.encode(message);
+        
+        // Validate size
+        if (encodedMessage.length > MAX_MESSAGE_SIZE) revert MessageTooLarge();
+        
+        return encodedMessage;
+    }
+
+    // ============ DECODING FUNCTIONS ============
+
+    /**
+     * @notice Decodes a YieldRequest from message bytes
+     * @param encodedMessage The encoded message to decode
+     * @return request The decoded yield request
+     */
+    function decodeYieldRequest(bytes memory encodedMessage) 
+        internal 
         pure 
-        returns (bool isValid) 
+        returns (DataTypes.YieldRequest memory request) 
     {
-        if (data.length == 0) {
-            return false;
+        // Validate input
+        if (encodedMessage.length == 0) revert InvalidMessageFormat();
+        
+        try {
+            // Decode the message
+            Message memory message = abi.decode(encodedMessage, (Message));
+            
+            // Validate message type and version
+            _validateMessageHeader(message.header, YIELD_REQUEST_TYPE);
+            
+            // Verify checksum
+            if (!_verifyChecksum(message.header, message.payload, message.checksum)) {
+                revert InvalidMessageFormat();
+            }
+            
+            // Decode the payload
+            (
+                address token,
+                address requester,
+                uint256 timestamp,
+                bytes32 requestId
+            ) = abi.decode(message.payload, (address, address, uint256, bytes32));
+            
+            // Create and validate the request
+            request = DataTypes.YieldRequest({
+                token: token,
+                requester: requester,
+                timestamp: timestamp,
+                requestId: requestId
+            });
+            
+            // Additional validation
+            if (!DataTypes.isValidRequest(request)) {
+                revert InvalidMessageFormat();
+            }
+            
+        } catch {
+            revert DecodingError();
         }
         
-        try this.getMessageType(data) returns (uint8 messageType) {
-            return messageType >= YIELD_REQUEST && messageType <= STAKE_RESPONSE;
+        return request;
+    }
+
+    /**
+     * @notice Decodes a YieldResponse from message bytes
+     * @param encodedMessage The encoded message to decode
+     * @return response The decoded yield response
+     */
+    function decodeYieldResponse(bytes memory encodedMessage) 
+        internal 
+        pure 
+        returns (DataTypes.YieldResponse memory response) 
+    {
+        // Validate input
+        if (encodedMessage.length == 0) revert InvalidMessageFormat();
+        
+        try {
+            // Decode the message
+            Message memory message = abi.decode(encodedMessage, (Message));
+            
+            // Validate message type and version
+            _validateMessageHeader(message.header, YIELD_RESPONSE_TYPE);
+            
+            // Verify checksum
+            if (!_verifyChecksum(message.header, message.payload, message.checksum)) {
+                revert InvalidMessageFormat();
+            }
+            
+            // Decode the payload
+            (
+                bytes32 requestId,
+                uint256 apyBps,
+                uint256 tvl,
+                bytes32 protocol,
+                uint256 timestamp,
+                bool success,
+                string memory errorMessage
+            ) = abi.decode(message.payload, (bytes32, uint256, uint256, bytes32, uint256, bool, string));
+            
+            // Create the response
+            response = DataTypes.YieldResponse({
+                requestId: requestId,
+                apyBps: apyBps,
+                tvl: tvl,
+                protocol: protocol,
+                timestamp: timestamp,
+                success: success,
+                errorMessage: errorMessage
+            });
+            
+            // Additional validation
+            if (!DataTypes.isValidResponse(response)) {
+                revert InvalidMessageFormat();
+            }
+            
         } catch {
-            return false;
+            revert DecodingError();
         }
+        
+        return response;
+    }
+
+    /**
+     * @notice Decodes a batch request from message bytes
+     * @param encodedMessage The encoded message to decode
+     * @return tokens Array of token addresses
+     * @return requester Address that made the request
+     * @return batchId Unique batch identifier
+     * @return timestamp When the request was made
+     */
+    function decodeBatchRequest(bytes memory encodedMessage) 
+        internal 
+        pure 
+        returns (
+            address[] memory tokens,
+            address requester,
+            bytes32 batchId,
+            uint256 timestamp
+        ) 
+    {
+        // Validate input
+        if (encodedMessage.length == 0) revert InvalidMessageFormat();
+        
+        try {
+            // Decode the message
+            Message memory message = abi.decode(encodedMessage, (Message));
+            
+            // Validate message type and version
+            _validateMessageHeader(message.header, BATCH_REQUEST_TYPE);
+            
+            // Verify checksum
+            if (!_verifyChecksum(message.header, message.payload, message.checksum)) {
+                revert InvalidMessageFormat();
+            }
+            
+            // Decode the payload
+            (tokens, requester, timestamp, batchId) = abi.decode(
+                message.payload, 
+                (address[], address, uint256, bytes32)
+            );
+            
+            // Validate decoded data
+            require(tokens.length > 0 && tokens.length <= DataTypes.MAX_BATCH_SIZE, "Invalid batch size");
+            require(requester != address(0), "Invalid requester");
+            require(batchId != bytes32(0), "Invalid batch ID");
+            
+        } catch {
+            revert DecodingError();
+        }
+    }
+
+    // ============ UTILITY FUNCTIONS ============
+
+    /**
+     * @notice Gets the message type from encoded message
+     * @param encodedMessage The encoded message
+     * @return messageType The type of the message
+     */
+    function getMessageType(bytes memory encodedMessage) 
+        internal 
+        pure 
+        returns (bytes32 messageType) 
+    {
+        if (encodedMessage.length < MIN_MESSAGE_SIZE) {
+            return bytes32(0);
+        }
+        
+        try {
+            Message memory message = abi.decode(encodedMessage, (Message));
+            return message.header.messageType;
+        } catch {
+            return bytes32(0);
+        }
+    }
+
+    /**
+     * @notice Gets the message version from encoded message
+     * @param encodedMessage The encoded message
+     * @return version The version of the message
+     */
+    function getMessageVersion(bytes memory encodedMessage) 
+        internal 
+        pure 
+        returns (uint256 version) 
+    {
+        if (encodedMessage.length < MIN_MESSAGE_SIZE) {
+            return 0;
+        }
+        
+        try {
+            Message memory message = abi.decode(encodedMessage, (Message));
+            return message.header.version;
+        } catch {
+            return 0;
+        }
+    }
+
+    /**
+     * @notice Checks if a message format is supported
+     * @param encodedMessage The encoded message to check
+     * @return isSupported Whether the message format is supported
+     */
+    function isMessageSupported(bytes memory encodedMessage) 
+        internal 
+        pure 
+        returns (bool isSupported) 
+    {
+        bytes32 msgType = getMessageType(encodedMessage);
+        uint256 version = getMessageVersion(encodedMessage);
+        
+        bool validType = (
+            msgType == YIELD_REQUEST_TYPE ||
+            msgType == YIELD_RESPONSE_TYPE ||
+            msgType == BATCH_REQUEST_TYPE ||
+            msgType == PROTOCOL_UPDATE_TYPE
+        );
+        
+        bool validVersion = (
+            version >= MIN_SUPPORTED_VERSION &&
+            version <= MAX_SUPPORTED_VERSION
+        );
+        
+        return validType && validVersion;
+    }
+
+    // ============ INTERNAL HELPER FUNCTIONS ============
+
+    /**
+     * @notice Calculates checksum for message integrity
+     * @param header Message header
+     * @param payload Message payload
+     * @return checksum The calculated checksum
+     */
+    function _calculateChecksum(
+        MessageHeader memory header,
+        bytes memory payload
+    ) private pure returns (bytes32 checksum) {
+        return keccak256(abi.encode(header, payload));
+    }
+
+    /**
+     * @notice Verifies message checksum
+     * @param header Message header
+     * @param payload Message payload
+     * @param checksum Expected checksum
+     * @return isValid Whether the checksum is valid
+     */
+    function _verifyChecksum(
+        MessageHeader memory header,
+        bytes memory payload,
+        bytes32 checksum
+    ) private pure returns (bool isValid) {
+        return _calculateChecksum(header, payload) == checksum;
+    }
+
+    /**
+     * @notice Validates message header
+     * @param header The header to validate
+     * @param expectedType Expected message type
+     */
+    function _validateMessageHeader(
+        MessageHeader memory header,
+        bytes32 expectedType
+    ) private pure {
+        if (header.messageType != expectedType) revert InvalidMessageType();
+        if (header.version < MIN_SUPPORTED_VERSION || header.version > MAX_SUPPORTED_VERSION) {
+            revert UnsupportedVersion();
+        }
+        if (header.timestamp == 0) revert InvalidMessageFormat();
     }
 }

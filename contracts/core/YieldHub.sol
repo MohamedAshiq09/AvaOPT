@@ -1,438 +1,722 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.20;
 
-import "./interfaces/ITeleporterMessenger.sol";
-import "./interfaces/ITeleporterReceiver.sol";
-import "./interfaces/IERC20.sol";
-import "./libraries/MessageEncoding.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
+           
 import "./libraries/DataTypes.sol";
+import "./libraries/MessageEncoding.sol";
+import "./libraries/YieldMath.sol";
 
-/**
- * @title YieldHub
- * @dev Main hub contract for cross-chain DeFi yield farming protocol
- * @dev Runs on C-Chain and coordinates yield farming across multiple subnets
- * @dev Receives yield data from subnet scouts and manages user positions
- */
-contract YieldHub is ITeleporterReceiver {
+import "./interfaces/IAaveAddressesProvider.sol";
+import "./interfaces/IAaveProtocolDataProvider.sol";
+import "./interfaces/IAavePool.sol";
+import "../interfaces/ITeleporterMessenger.sol";
+import "../interfaces/ITeleporterReceiver.sol";
+
+
+contract YieldHub is Ownable, ReentrancyGuard, Pausable, ITeleporterReceiver {
     using MessageEncoding for bytes;
+    using YieldMath for uint256;
+
     
-    // Core protocol components
-    ITeleporterMessenger public immutable teleporterMessenger;
+    uint256 private constant MAX_APY_BPS = 50000; 
+    uint256 private constant MIN_FRESHNESS = 30; 
+    uint256 private constant MAX_FRESHNESS = 3600;
+    uint256 private constant AAVE_RISK_SCORE = 10;
+    uint256 private constant SUBNET_RISK_SCORE = 30; 
     
-    // Protocol state
-    address public owner;
-    mapping(bytes32 => bool) public supportedChains;
-    mapping(bytes32 => address) public chainScouts; // chainId => YieldScout address
-    mapping(address => bool) public supportedTokens;
+    bytes32 private constant AAVE_PROTOCOL = keccak256("AAVE_V3");
+
     
-    // Yield data aggregation
-    struct YieldData {
-        uint256 apy;
-        uint256 tvl;
-        string protocolName;
-        bytes32 sourceChain;
-        uint256 lastUpdate;
-        bool isActive;
-    }
+    IAaveAddressesProvider public aaveProvider;
+    IAavePool public aavePool;
+    IAaveProtocolDataProvider public aaveDataProvider;
     
-    // token => chainId => YieldData
-    mapping(address => mapping(bytes32 => YieldData)) public yieldData;
-    
-    // User positions and requests
-    struct UserPosition {
-        address user;
-        address token;
-        uint256 amount;
-        bytes32 targetChain;
-        address targetProtocol;
-        uint256 timestamp;
-        bool isActive;
-    }
-    
-    mapping(bytes32 => UserPosition) public userPositions; // requestId => position
-    mapping(address => bytes32[]) public userRequestIds; // user => requestId[]
-    mapping(bytes32 => bool) public processedRequests;
-    
-    // Request tracking
-    uint256 private _requestCounter;
-    mapping(bytes32 => uint256) public pendingRequests; // requestId => timestamp
+    ITeleporterMessenger public teleporterMessenger;
+    bytes32 public destChainId;
+    address public destReceiver;
+
+    mapping(address => DataTypes.YieldData) public aaveData;
+    mapping(address => DataTypes.YieldData) public subnetData;
+    mapping(bytes32 => DataTypes.RequestInfo) public requests;
+    mapping(address => bytes32) public latestRequest;
     
     // Configuration
-    uint256 public constant YIELD_DATA_STALENESS = 600; // 10 minutes
-    uint256 public constant REQUEST_TIMEOUT = 1800; // 30 minutes
-    uint256 public constant MIN_STAKE_AMOUNT = 1e6; // Minimum 1 USDC worth
+    uint256 public dataFreshness = 120; // 2 minutes default
+    mapping(address => bool) public supportedTokens;
+    mapping(address => uint256) public tokenDecimals;
+    address[] public tokenList;
     
-    // Events
-    event ChainAdded(bytes32 indexed chainId, address scout);
-    event ChainRemoved(bytes32 indexed chainId);
-    event YieldDataReceived(address indexed token, bytes32 indexed chainId, uint256 apy, uint256 tvl);
-    event YieldRequestSent(bytes32 indexed requestId, address indexed token, bytes32 indexed chainId);
-    event UserStakeInitiated(bytes32 indexed requestId, address indexed user, address token, uint256 amount);
-    event UserStakeCompleted(bytes32 indexed requestId, bool success);
-    event TokenSupportUpdated(address indexed token, bool supported);
+    // Emergency and Maintenance
+    bool public emergencyMode = false;
+    mapping(address => bool) public authorizedCallers;
+
+    // ============ EVENTS ============
     
-    // Errors
-    error OnlyOwner();
-    error OnlyTeleporter();
-    error UnsupportedChain(bytes32 chainId);
-    error UnsupportedToken(address token);
-    error InvalidAmount(uint256 amount);
-    error RequestAlreadyProcessed(bytes32 requestId);
-    error StaleYieldData(address token, bytes32 chainId);
-    error RequestTimeout(bytes32 requestId);
-    error InvalidMessageType(uint8 messageType);
+    event AaveProviderSet(address indexed provider);
+    event AaveDataProviderSet(address indexed dataProvider);
+    event TeleporterSet(address indexed messenger);
+    event DestSubnetSet(bytes32 indexed chainId, address indexed receiver);
     
-    modifier onlyOwner() {
-        if (msg.sender != owner) revert OnlyOwner();
-        _;
-    }
+    event AaveUpdated(
+        address indexed token, 
+        uint256 apyBps, 
+        uint256 tvl, 
+        uint256 liquidityIndex,
+        uint256 timestamp
+    );
     
-    modifier onlyTeleporter() {
-        if (msg.sender != address(teleporterMessenger)) revert OnlyTeleporter();
-        _;
-    }
+    event SubnetRequest(
+        bytes32 indexed requestId, 
+        address indexed token, 
+        address indexed requester,
+        bytes32 destChainId,
+        address destReceiver,
+        uint256 timestamp
+    );
     
-    modifier supportedToken(address token) {
-        if (!supportedTokens[token]) revert UnsupportedToken(token);
-        _;
-    }
+    event SubnetResponse(
+        bytes32 indexed requestId, 
+        address indexed token, 
+        uint256 apyBps, 
+        uint256 tvl,
+        bytes32 protocol,
+        uint256 timestamp
+    );
     
-    modifier supportedChain(bytes32 chainId) {
-        if (!supportedChains[chainId]) revert UnsupportedChain(chainId);
-        _;
-    }
+    event TokenAdded(address indexed token, uint256 decimals);
+    event TokenRemoved(address indexed token);
+    event DataFreshnessUpdated(uint256 newFreshness);
+    event EmergencyModeToggled(bool enabled);
+    event AuthorizedCallerUpdated(address indexed caller, bool authorized);
+
+    // ============ ERRORS ============
+    
+    error ZeroAddress();
+    error TokenNotSupported();
+    error StaleData();
+    error InvalidWeights();
+    error InvalidAPY();
+    error EmergencyModeActive();
+    error UnauthorizedCaller();
+    error InvalidDataProvider();
+
+    // ============ CONSTRUCTOR ============
     
     constructor(
-        address _teleporterMessenger,
-        bytes32[] memory _chainIds,
-        address[] memory _scouts,
-        address[] memory _supportedTokens
+        address _aaveProvider,
+        address _aaveDataProvider,
+        address _teleporter
     ) {
-        teleporterMessenger = ITeleporterMessenger(_teleporterMessenger);
-        owner = msg.sender;
+        if (_aaveProvider == address(0)) revert ZeroAddress();
+        if (_aaveDataProvider == address(0)) revert ZeroAddress();
+        if (_teleporter == address(0)) revert ZeroAddress();
+
+        aaveProvider = IAaveAddressesProvider(_aaveProvider);
+        aaveDataProvider = IAaveProtocolDataProvider(_aaveDataProvider);
+        teleporterMessenger = ITeleporterMessenger(_teleporter);
         
-        // Initialize supported chains and scouts
-        require(_chainIds.length == _scouts.length, "Mismatched arrays");
-        for (uint i = 0; i < _chainIds.length; i++) {
-            supportedChains[_chainIds[i]] = true;
-            chainScouts[_chainIds[i]] = _scouts[i];
-            emit ChainAdded(_chainIds[i], _scouts[i]);
-        }
+        // Cache the pool address from provider
+        address poolAddress = aaveProvider.getPool();
+        if (poolAddress == address(0)) revert InvalidDataProvider();
+        aavePool = IAavePool(poolAddress);
         
-        // Initialize supported tokens
-        for (uint i = 0; i < _supportedTokens.length; i++) {
-            supportedTokens[_supportedTokens[i]] = true;
-            emit TokenSupportUpdated(_supportedTokens[i], true);
-        }
+        // Set deployer as authorized caller
+        authorizedCallers[msg.sender] = true;
+        
+        emit AaveProviderSet(_aaveProvider);
+        emit AaveDataProviderSet(_aaveDataProvider);
+        emit TeleporterSet(_teleporter);
+        emit AuthorizedCallerUpdated(msg.sender, true);
     }
+
+    // ============ MODIFIERS ============
     
-    /**
-     * @dev Receives cross-chain messages from subnet scouts
-     * @param sourceBlockchainID The blockchain ID of the source chain
-     * @param originSenderAddress The address that sent the message (should be a YieldScout)
-     * @param message The encoded message containing yield or stake response data
-     */
-    function receiveTeleporterMessage(
-        bytes32 sourceBlockchainID,
-        address originSenderAddress,
-        bytes calldata message
-    ) external onlyTeleporter {
-        // Verify the sender is an authorized scout
-        require(
-            chainScouts[sourceBlockchainID] == originSenderAddress,
-            "Unauthorized scout"
-        );
-        
-        // Get message type and route accordingly
-        uint8 messageType = MessageEncoding.getMessageType(message);
-        
-        if (messageType == MessageEncoding.YIELD_RESPONSE) {
-            _handleYieldResponse(sourceBlockchainID, message);
-        } else if (messageType == MessageEncoding.STAKE_RESPONSE) {
-            _handleStakeResponse(sourceBlockchainID, message);
-        } else {
-            revert InvalidMessageType(messageType);
+    modifier onlyAuthorized() {
+        if (!authorizedCallers[msg.sender] && msg.sender != owner()) {
+            revert UnauthorizedCaller();
         }
+        _;
     }
+
+    modifier notEmergencyMode() {
+        if (emergencyMode) revert EmergencyModeActive();
+        _;
+    }
+
+    modifier validToken(address _token) {
+        if (!supportedTokens[_token]) revert TokenNotSupported();
+        _;
+    }
+
+    // ============ ADMIN FUNCTIONS ============
     
+    function setAaveAddressesProvider(address _provider) external onlyOwner {
+        if (_provider == address(0)) revert ZeroAddress();
+        
+        aaveProvider = IAaveAddressesProvider(_provider);
+        address poolAddress = aaveProvider.getPool();
+        if (poolAddress == address(0)) revert InvalidDataProvider();
+        aavePool = IAavePool(poolAddress);
+        
+        emit AaveProviderSet(_provider);
+    }
+
+    function setAaveDataProvider(address _dataProvider) external onlyOwner {
+        if (_dataProvider == address(0)) revert ZeroAddress();
+        aaveDataProvider = IAaveProtocolDataProvider(_dataProvider);
+        emit AaveDataProviderSet(_dataProvider);
+    }
+
+    function setTeleporterMessenger(address _messenger) external onlyOwner {
+        if (_messenger == address(0)) revert ZeroAddress();
+        teleporterMessenger = ITeleporterMessenger(_messenger);
+        emit TeleporterSet(_messenger);
+    }
+
+    function setDestSubnet(bytes32 _chainId, address _receiver) external onlyOwner {
+        if (_chainId == bytes32(0)) revert ZeroAddress();
+        if (_receiver == address(0)) revert ZeroAddress();
+        
+        destChainId = _chainId;
+        destReceiver = _receiver;
+        emit DestSubnetSet(_chainId, _receiver);
+    }
+
+    function setDataFreshness(uint256 _seconds) external onlyOwner {
+        require(_seconds >= MIN_FRESHNESS && _seconds <= MAX_FRESHNESS, "Invalid freshness");
+        dataFreshness = _seconds;
+        emit DataFreshnessUpdated(_seconds);
+    }
+
+    function addSupportedToken(address _token, uint256 _decimals) external onlyOwner {
+        if (_token == address(0)) revert ZeroAddress();
+        require(!supportedTokens[_token], "Already supported");
+        require(_decimals <= 18, "Invalid decimals");
+        
+        // Verify token exists in Aave (this will revert if not supported)
+        try aaveDataProvider.getReserveConfigurationData(_token) returns (
+            uint256,uint256,uint256,uint256,uint256,bool,bool,bool,bool isActive,bool
+        ) {
+            require(isActive, "Token not active in Aave");
+        } catch {
+            revert("Token not supported by Aave");
+        }
+        
+        supportedTokens[_token] = true;
+        tokenDecimals[_token] = _decimals;
+        tokenList.push(_token);
+        
+        emit TokenAdded(_token, _decimals);
+    }
+
+    function removeSupportedToken(address _token) external onlyOwner validToken(_token) {
+        supportedTokens[_token] = false;
+        delete tokenDecimals[_token];
+        
+        // Remove from array
+        for (uint256 i = 0; i < tokenList.length; i++) {
+            if (tokenList[i] == _token) {
+                tokenList[i] = tokenList[tokenList.length - 1];
+                tokenList.pop();
+                break;
+            }
+        }
+        
+        emit TokenRemoved(_token);
+    }
+
+    function setAuthorizedCaller(address _caller, bool _authorized) external onlyOwner {
+        if (_caller == address(0)) revert ZeroAddress();
+        authorizedCallers[_caller] = _authorized;
+        emit AuthorizedCallerUpdated(_caller, _authorized);
+    }
+
+    function toggleEmergencyMode() external onlyOwner {
+        emergencyMode = !emergencyMode;
+        emit EmergencyModeToggled(emergencyMode);
+    }
+
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+
+    // ============ AAVE INTEGRATION FUNCTIONS ============
+
     /**
-     * @dev Request yield data from a specific chain
-     * @param token Token address to get yield data for
-     * @param chainId Target chain ID
-     * @return requestId Unique identifier for the request
+     * @notice Updates Aave yield data for a given token using real Aave V3 data
+     * @param _token Token address to update
      */
-    function requestYieldData(address token, bytes32 chainId) 
-        external 
-        supportedToken(token) 
-        supportedChain(chainId) 
-        returns (bytes32 requestId) 
+    function updateAaveData(address _token) 
+        public 
+        whenNotPaused 
+        notEmergencyMode 
+        validToken(_token) 
     {
-        requestId = _generateRequestId();
+        // Get real Aave data
+        (uint256 apyBps, uint256 tvl, uint256 liquidityIndex) = _getAaveYieldData(_token);
         
-        // Create yield request message
-        MessageEncoding.YieldRequest memory request = MessageEncoding.YieldRequest({
-            requestId: requestId,
-            token: token,
-            responseContract: address(this),
-            timestamp: block.timestamp
-        });
+        // Validate APY is reasonable
+        if (!YieldMath.isValidAPY(apyBps)) {
+            apyBps = YieldMath.sanityClampBps(apyBps, 0, MAX_APY_BPS);
+        }
         
-        // Encode and send message
-        bytes memory encodedMessage = MessageEncoding.encodeYieldRequest(request);
-        
-        _sendCrossChainMessage(chainId, chainScouts[chainId], encodedMessage);
-        
-        // Track pending request
-        pendingRequests[requestId] = block.timestamp;
-        
-        emit YieldRequestSent(requestId, token, chainId);
-    }
-    
-    /**
-     * @dev Initiate staking on a target chain
-     * @param token Token to stake
-     * @param amount Amount to stake
-     * @param chainId Target chain ID
-     * @param targetProtocol Target protocol address on the subnet
-     * @return requestId Unique identifier for the stake request
-     */
-    function initiateStake(
-        address token,
-        uint256 amount,
-        bytes32 chainId,
-        address targetProtocol
-    ) 
-        external 
-        supportedToken(token) 
-        supportedChain(chainId) 
-        returns (bytes32 requestId) 
-    {
-        if (amount < MIN_STAKE_AMOUNT) revert InvalidAmount(amount);
-        
-        // Transfer tokens from user to this contract
-        IERC20(token).transferFrom(msg.sender, address(this), amount);
-        
-        requestId = _generateRequestId();
-        
-        // Create user position record
-        userPositions[requestId] = UserPosition({
-            user: msg.sender,
-            token: token,
-            amount: amount,
-            targetChain: chainId,
-            targetProtocol: targetProtocol,
+        // Store the data
+        aaveData[_token] = DataTypes.YieldData({
+            apyBps: apyBps,
+            tvl: tvl,
             timestamp: block.timestamp,
+            protocol: AAVE_PROTOCOL,
             isActive: true
         });
         
-        userRequestIds[msg.sender].push(requestId);
-        
-        // Create stake request message
-        MessageEncoding.StakeRequest memory request = MessageEncoding.StakeRequest({
-            requestId: requestId,
-            user: msg.sender,
-            token: token,
-            amount: amount,
-            targetProtocol: targetProtocol,
-            timestamp: block.timestamp
-        });
-        
-        // Note: In a real implementation, you'd need to bridge the tokens to the target chain
-        // This is simplified for the skeletal implementation
-        
-        emit UserStakeInitiated(requestId, msg.sender, token, amount);
+        emit AaveUpdated(_token, apyBps, tvl, liquidityIndex, block.timestamp);
     }
-    
+
     /**
-     * @dev Get the best yield opportunity for a token across all supported chains
-     * @param token Token address
-     * @return bestChain Chain with highest yield
-     * @return bestAPY Highest APY found
-     * @return bestProtocol Protocol offering the best yield
+     * @notice Gets real Aave yield data from protocol contracts
+     * @param _token Token address
+     * @return apyBps APY in basis points
+     * @return tvl Total value locked
+     * @return liquidityIndex Current liquidity index
      */
-    function getBestYield(address token) 
+    function _getAaveYieldData(address _token) 
+        internal 
+        view 
+        returns (uint256 apyBps, uint256 tvl, uint256 liquidityIndex) 
+    {
+        try aaveDataProvider.getReserveData(_token) returns (
+            uint256, // unbacked
+            uint256, // accruedToTreasuryScaled  
+            uint256 totalAToken,
+            uint256, // totalStableDebt
+            uint256, // totalVariableDebt
+            uint256 liquidityRate,
+            uint256, // variableBorrowRate
+            uint256, // stableBorrowRate
+            uint256, // averageStableBorrowRate
+            uint256 _liquidityIndex,
+            uint256, // variableBorrowIndex
+            uint40 // lastUpdateTimestamp
+        ) {
+            // Convert Aave's ray-based liquidity rate to basis points APY
+            apyBps = YieldMath.aaveRayToBps(liquidityRate);
+            
+            // Calculate TVL from total aToken supply
+            tvl = totalAToken;
+            liquidityIndex = _liquidityIndex;
+            
+        } catch {
+            // Fallback to safe defaults if Aave call fails
+            apyBps = 0;
+            tvl = 0;
+            liquidityIndex = 1e27; // 1 in ray format
+        }
+        
+        return (apyBps, tvl, liquidityIndex);
+    }
+
+    /**
+     * @notice Gets current Aave APY for a token (external view function)
+     * @param _token Token address
+     * @return apyBps APY in basis points
+     */
+    function getAaveAPY(address _token) public view validToken(_token) returns (uint256 apyBps) {
+        (apyBps,,) = _getAaveYieldData(_token);
+        return apyBps;
+    }
+
+    /**
+     * @notice Gets current Aave TVL for a token
+     * @param _token Token address
+     * @return tvl Total value locked
+     */
+    function getAaveTVL(address _token) public view validToken(_token) returns (uint256 tvl) {
+        (,tvl,) = _getAaveYieldData(_token);
+        return tvl;
+    }
+
+    /**
+     * @notice Gets comprehensive Aave data including liquidity index
+     * @param _token Token address
+     * @return apyBps APY in basis points
+     * @return tvl Total value locked
+     * @return liquidityIndex Current liquidity index
+     * @return lastUpdate Last update timestamp from stored data
+     */
+    function getAaveDetails(address _token) 
         external 
         view 
-        supportedToken(token) 
-        returns (bytes32 bestChain, uint256 bestAPY, string memory bestProtocol) 
+        validToken(_token) 
+        returns (uint256 apyBps, uint256 tvl, uint256 liquidityIndex, uint256 lastUpdate) 
     {
-        uint256 highestAPY = 0;
+        DataTypes.YieldData memory data = aaveData[_token];
         
-        // Iterate through all supported chains to find best yield
-        // Note: In production, you'd maintain a more efficient data structure
-        bytes32[] memory chains = _getSupportedChains();
+        if (isDataFresh(data.timestamp)) {
+            // Return stored data if fresh
+            return (data.apyBps, data.tvl, 0, data.timestamp);
+        } else {
+            // Get fresh data from Aave
+            (apyBps, tvl, liquidityIndex) = _getAaveYieldData(_token);
+            return (apyBps, tvl, liquidityIndex, block.timestamp);
+        }
+    }
+
+    /**
+     * @notice Checks if data is fresh enough based on configured freshness
+     * @param _timestamp Data timestamp to check
+     * @return bool True if data is fresh
+     */
+    function isDataFresh(uint256 _timestamp) public view returns (bool) {
+        return (block.timestamp - _timestamp) <= dataFreshness;
+    }
+
+    // ============ CROSS-CHAIN AWM FUNCTIONS ============
+
+    /**
+     * @notice Requests subnet yield data via Avalanche Warp Messaging
+     * @param _token Token to get subnet yield for
+     * @return requestId Unique request identifier
+     */
+    function requestSubnetYield(address _token) 
+        external 
+        payable 
+        nonReentrant 
+        whenNotPaused 
+        notEmergencyMode
+        validToken(_token)
+        returns (bytes32 requestId) 
+    {
+        require(destChainId != bytes32(0), "Dest chain not set");
+        require(destReceiver != address(0), "Dest receiver not set");
+        require(msg.value > 0, "Teleporter fee required");
         
-        for (uint i = 0; i < chains.length; i++) {
-            YieldData memory data = yieldData[token][chains[i]];
+        // Generate unique request ID
+        requestId = keccak256(abi.encodePacked(
+            _token,
+            msg.sender,
+            block.timestamp,
+            block.number,
+            block.chainid
+        ));
+        
+        // Ensure request ID is unique
+        require(requests[requestId].timestamp == 0, "Request ID collision");
+        
+        // Store request info
+        requests[requestId] = DataTypes.RequestInfo({
+            token: _token,
+            requester: msg.sender,
+            timestamp: block.timestamp,
+            status: DataTypes.RequestStatus.Pending
+        });
+        
+        latestRequest[_token] = requestId;
+        
+        // Create request message with token decimals for proper handling
+        DataTypes.YieldRequest memory request = DataTypes.YieldRequest({
+            token: _token,
+            requester: msg.sender,
+            timestamp: block.timestamp,
+            requestId: requestId
+        });
+        
+        bytes memory payload = MessageEncoding.encodeYieldRequest(request);
+        
+        // Send AWM message with proper error handling
+        try teleporterMessenger.sendCrossChainMessage{value: msg.value}(
+            destChainId,
+            destReceiver,
+            payload
+        ) returns (bytes32 messageId) {
+            // Message sent successfully
+            emit SubnetRequest(
+                requestId, 
+                _token, 
+                msg.sender, 
+                destChainId, 
+                destReceiver,
+                block.timestamp
+            );
             
-            if (data.isActive && 
-                data.apy > highestAPY && 
-                block.timestamp - data.lastUpdate < YIELD_DATA_STALENESS) {
-                
-                highestAPY = data.apy;
-                bestChain = chains[i];
-                bestAPY = data.apy;
-                bestProtocol = data.protocolName;
+            return requestId;
+        } catch Error(string memory reason) {
+            revert(string(abi.encodePacked("AWM send failed: ", reason)));
+        } catch {
+            revert("AWM send failed");
+        }
+    }
+
+    /**
+     * @notice Receives cross-chain message responses from subnets
+     * @param sourceChainId Chain ID of the message source
+     * @param originSenderAddress Address that sent the original message
+     * @param message Encoded message payload
+     */
+    function receiveTeleporterMessage(
+        bytes32 sourceChainId,
+        address originSenderAddress,
+        bytes calldata message
+    ) external override whenNotPaused notEmergencyMode {
+        // Validate the message source
+        require(msg.sender == address(teleporterMessenger), "Invalid messenger");
+        require(sourceChainId == destChainId, "Invalid source chain");
+        require(originSenderAddress == destReceiver, "Invalid origin sender");
+        
+        // Decode the response with error handling
+        DataTypes.YieldResponse memory response;
+        try MessageEncoding.decodeYieldResponse(message) returns (DataTypes.YieldResponse memory _response) {
+            response = _response;
+        } catch {
+            revert("Invalid message format");
+        }
+        
+        // Validate the request exists and is pending
+        DataTypes.RequestInfo storage requestInfo = requests[response.requestId];
+        require(requestInfo.timestamp != 0, "Request not found");
+        require(requestInfo.status == DataTypes.RequestStatus.Pending, "Request not pending");
+        
+        address token = requestInfo.token;
+        
+        // Validate and clamp the APY data
+        uint256 clampedAPY = YieldMath.sanityClampBps(response.apyBps, 0, MAX_APY_BPS);
+        
+        // Additional validation for reasonable values
+        require(response.tvl <= type(uint128).max, "TVL too large");
+        require(response.timestamp <= block.timestamp + 300, "Future timestamp"); // Allow 5min clock skew
+        require(response.timestamp > block.timestamp - 3600, "Too old timestamp"); // Max 1 hour old
+        
+        // Store subnet yield data
+        subnetData[token] = DataTypes.YieldData({
+            apyBps: clampedAPY,
+            tvl: response.tvl,
+            timestamp: response.timestamp,
+            protocol: response.protocol,
+            isActive: true
+        });
+        
+        // Mark request as completed
+        requestInfo.status = DataTypes.RequestStatus.Completed;
+        
+        emit SubnetResponse(
+            response.requestId,
+            token,
+            clampedAPY,
+            response.tvl,
+            response.protocol,
+            response.timestamp
+        );
+    }
+
+    // ============ YIELD CALCULATION FUNCTIONS ============
+
+    /**
+     * @notice Calculates optimized APY combining Aave and subnet yields with risk adjustment
+     * @param _token Token address
+     * @return optimizedAPY Risk-adjusted optimized APY in basis points
+     */
+    function calculateOptimizedAPY(address _token) 
+        public 
+        view 
+        validToken(_token)
+        returns (uint256 optimizedAPY) 
+    {
+        DataTypes.YieldData memory aave = aaveData[_token];
+        DataTypes.YieldData memory subnet = subnetData[_token];
+        
+        // Ensure we have fresh data from both sources
+        require(aave.isActive && isDataFresh(aave.timestamp), "Stale Aave data");
+        require(subnet.isActive && isDataFresh(subnet.timestamp), "Stale subnet data");
+        
+        // Calculate risk-adjusted yields
+        uint256 aaveRiskAdjusted = YieldMath.calculateRiskAdjustedYield(
+            aave.apyBps, 
+            AAVE_RISK_SCORE
+        );
+        
+        uint256 subnetRiskAdjusted = YieldMath.calculateRiskAdjustedYield(
+            subnet.apyBps, 
+            SUBNET_RISK_SCORE
+        );
+        
+        // Use the enhanced optimization algorithm
+        return YieldMath.calculateOptimizedAPY(aaveRiskAdjusted, subnetRiskAdjusted);
+    }
+
+    /**
+     * @notice Gets comprehensive yield data for a token including risk metrics
+     * @param _token Token address
+     * @return aave Aave yield data
+     * @return subnet Subnet yield data  
+     * @return optimizedBps Optimized APY in basis points
+     * @return riskScore Combined risk score (0-100)
+     */
+    function getComprehensiveYield(address _token)
+        external
+        view
+        validToken(_token)
+        returns (
+            DataTypes.YieldData memory aave,
+            DataTypes.YieldData memory subnet,
+            uint256 optimizedBps,
+            uint256 riskScore
+        )
+    {
+        aave = aaveData[_token];
+        subnet = subnetData[_token];
+        
+        if (aave.isActive && subnet.isActive && 
+            isDataFresh(aave.timestamp) && isDataFresh(subnet.timestamp)) {
+            
+            optimizedBps = calculateOptimizedAPY(_token);
+            
+            // Calculate weighted risk score based on allocation
+            // Using the same weights as optimization: 60% Aave, 40% Subnet
+            riskScore = (AAVE_RISK_SCORE * 60 + SUBNET_RISK_SCORE * 40) / 100;
+        } else {
+            optimizedBps = 0;
+            riskScore = 100; // Maximum risk when data unavailable
+        }
+    }
+
+    /**
+     * @notice Updates all yield data for a token (Aave + triggers subnet request)
+     * @param _token Token address
+     * @return requestId The subnet request ID if successful
+     */
+    function refreshAllData(address _token) 
+        external 
+        payable 
+        whenNotPaused 
+        notEmergencyMode
+        validToken(_token)
+        returns (bytes32 requestId)
+    {
+        // Update Aave data immediately
+        updateAaveData(_token);
+        
+        // Request subnet data via AWM
+        return requestSubnetYield{value: msg.value}(_token);
+    }
+
+    /**
+     * @notice Batch update multiple tokens (Aave data only)
+     * @param _tokens Array of token addresses to update
+     */
+    function batchUpdateAaveData(address[] calldata _tokens) 
+        external 
+        whenNotPaused 
+        notEmergencyMode 
+        onlyAuthorized 
+    {
+        require(_tokens.length <= 20, "Too many tokens"); // Gas limit protection
+        
+        for (uint256 i = 0; i < _tokens.length; i++) {
+            if (supportedTokens[_tokens[i]]) {
+                updateAaveData(_tokens[i]);
             }
         }
     }
-    
+
+    // ============ VIEW FUNCTIONS ============
+
+    function getSupportedTokens() external view returns (address[] memory) {
+        return tokenList;
+    }
+
+    function getRequestStatus(bytes32 _requestId) 
+        external 
+        view 
+        returns (DataTypes.RequestInfo memory) 
+    {
+        return requests[_requestId];
+    }
+
+    function getLatestRequestId(address _token) external view returns (bytes32) {
+        return latestRequest[_token];
+    }
+
+    function isTokenSupported(address _token) external view returns (bool) {
+        return supportedTokens[_token];
+    }
+
+    function getTokenDecimals(address _token) external view returns (uint256) {
+        return tokenDecimals[_token];
+    }
+
     /**
-     * @dev Handle yield response messages from scouts
-     * @param sourceChain Chain that sent the response
-     * @param message Encoded yield response message
+     * @notice Gets yield comparison data for analysis
+     * @param _token Token address
+     * @return aaveAPY Current Aave APY
+     * @return subnetAPY Current subnet APY
+     * @return optimizedAPY Calculated optimized APY
+     * @return aaveWeight Weight allocated to Aave in optimization
+     * @return subnetWeight Weight allocated to subnet in optimization
      */
-    function _handleYieldResponse(bytes32 sourceChain, bytes memory message) internal {
-        MessageEncoding.YieldResponse memory response = MessageEncoding.decodeYieldResponse(message);
+    function getYieldComparison(address _token)
+        external
+        view
+        validToken(_token)
+        returns (
+            uint256 aaveAPY,
+            uint256 subnetAPY,
+            uint256 optimizedAPY,
+            uint256 aaveWeight,
+            uint256 subnetWeight
+        )
+    {
+        DataTypes.YieldData memory aave = aaveData[_token];
+        DataTypes.YieldData memory subnet = subnetData[_token];
         
-        // Verify this is a response to a pending request
-        require(pendingRequests[response.requestId] != 0, "Unknown request");
+        aaveAPY = aave.apyBps;
+        subnetAPY = subnet.apyBps;
         
-        // Update yield data
-        yieldData[response.token][sourceChain] = YieldData({
-            apy: response.apy,
-            tvl: response.tvl,
-            protocolName: response.protocolName,
-            sourceChain: sourceChain,
-            lastUpdate: block.timestamp,
-            isActive: true
-        });
-        
-        // Clean up pending request
-        delete pendingRequests[response.requestId];
-        
-        emit YieldDataReceived(response.token, sourceChain, response.apy, response.tvl);
+        if (aave.isActive && subnet.isActive && 
+            isDataFresh(aave.timestamp) && isDataFresh(subnet.timestamp)) {
+            
+            optimizedAPY = calculateOptimizedAPY(_token);
+            
+            // Return the weights used in optimization (simplified version)
+            if (subnet.apyBps > aave.apyBps * 15 / 10) {
+                aaveWeight = 7000; // 70%
+                subnetWeight = 3000; // 30%
+            } else if (aave.apyBps > subnet.apyBps * 12 / 10) {
+                aaveWeight = 8000; // 80%
+                subnetWeight = 2000; // 20%
+            } else {
+                aaveWeight = 6000; // 60%
+                subnetWeight = 4000; // 40%
+            }
+        }
     }
-    
-    /**
-     * @dev Handle stake response messages from scouts
-     * @param sourceChain Chain that sent the response
-     * @param message Encoded stake response message
-     */
-    function _handleStakeResponse(bytes32 sourceChain, bytes memory message) internal {
-        MessageEncoding.StakeResponse memory response = MessageEncoding.decodeStakeResponse(message);
-        
-        // Verify position exists
-        UserPosition storage position = userPositions[response.requestId];
-        require(position.isActive, "Invalid position");
-        
-        // Update position status
-        position.isActive = response.success;
-        
-        emit UserStakeCompleted(response.requestId, response.success);
+
+    // ============ EMERGENCY FUNCTIONS ============
+
+    function emergencyWithdraw() external onlyOwner {
+        payable(owner()).transfer(address(this).balance);
     }
-    
-    /**
-     * @dev Send a cross-chain message via Teleporter
-     * @param destinationChain Target chain ID
-     * @param destinationAddress Target contract address
-     * @param message Encoded message payload
-     */
-    function _sendCrossChainMessage(
-        bytes32 destinationChain,
-        address destinationAddress,
-        bytes memory message
-    ) internal {
-        teleporterMessenger.sendCrossChainMessage(
-            TeleporterMessageInput({
-                destinationBlockchainID: destinationChain,
-                destinationAddress: destinationAddress,
-                feeInfo: TeleporterFeeInfo({
-                    feeTokenAddress: address(0),
-                    amount: 0
-                }),
-                requiredGasLimit: 300000,
-                allowedRelayerAddresses: new address[](0),
-                message: message
-            })
-        );
+
+    function emergencyPauseToken(address _token) external onlyOwner {
+        if (supportedTokens[_token]) {
+            aaveData[_token].isActive = false;
+            subnetData[_token].isActive = false;
+        }
     }
-    
-    /**
-     * @dev Generate a unique request ID
-     * @return requestId Unique identifier
-     */
-    function _generateRequestId() internal returns (bytes32 requestId) {
-        requestId = keccak256(
-            abi.encodePacked(
-                block.timestamp,
-                block.prevrandao,
-                msg.sender,
-                _requestCounter++
-            )
-        );
+
+    function emergencyReactivateToken(address _token) external onlyOwner validToken(_token) {
+        aaveData[_token].isActive = true;
+        subnetData[_token].isActive = true;
     }
-    
-    /**
-     * @dev Get array of supported chain IDs (helper function)
-     * @return chains Array of supported chain IDs
-     */
-    function _getSupportedChains() internal view returns (bytes32[] memory chains) {
-        // Simplified implementation - in production you'd maintain this list
-        // For now, return empty array to avoid compilation issues
-        chains = new bytes32[](0);
-    }
-    
-    // Owner functions
-    
-    /**
-     * @dev Add support for a new chain
-     * @param chainId Chain ID to add
-     * @param scout YieldScout contract address on the chain
-     */
-    function addChain(bytes32 chainId, address scout) external onlyOwner {
-        supportedChains[chainId] = true;
-        chainScouts[chainId] = scout;
-        emit ChainAdded(chainId, scout);
-    }
-    
-    /**
-     * @dev Remove support for a chain
-     * @param chainId Chain ID to remove
-     */
-    function removeChain(bytes32 chainId) external onlyOwner {
-        supportedChains[chainId] = false;
-        delete chainScouts[chainId];
-        emit ChainRemoved(chainId);
-    }
-    
-    /**
-     * @dev Update token support
-     * @param token Token address
-     * @param supported Whether to support the token
-     */
-    function setTokenSupport(address token, bool supported) external onlyOwner {
-        supportedTokens[token] = supported;
-        emit TokenSupportUpdated(token, supported);
-    }
-    
-    /**
-     * @dev Get user's request IDs
-     * @param user User address
-     * @return requestIds Array of request IDs for the user
-     */
-    function getUserRequests(address user) external view returns (bytes32[] memory requestIds) {
-        return userRequestIds[user];
-    }
-    
-    /**
-     * @dev Check if yield data is fresh for a token on a specific chain
-     * @param token Token address
-     * @param chainId Chain ID
-     * @return isFresh Whether the data is within staleness threshold
-     */
-    function isYieldDataFresh(address token, bytes32 chainId) external view returns (bool isFresh) {
-        YieldData memory data = yieldData[token][chainId];
-        return data.lastUpdate > 0 && 
-               block.timestamp - data.lastUpdate < YIELD_DATA_STALENESS;
-    }
-    
-    /**
-     * @dev Emergency function to transfer ownership
-     * @param newOwner New owner address
-     */
-    function transferOwnership(address newOwner) external onlyOwner {
-        require(newOwner != address(0), "Invalid address");
-        owner = newOwner;
+
+    // ============ RECEIVE FUNCTION ============
+
+    receive() external payable {
+        // Accept ETH for Teleporter fees
     }
 }
