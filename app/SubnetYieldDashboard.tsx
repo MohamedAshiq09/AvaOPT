@@ -270,6 +270,7 @@ import AaveDashboard from './components/AaveDashboard';
 import PortfolioOverview from './components/PortfolioOverview';
 import PortfolioPositions from './components/PortfolioPositions';
 import CrossChainYieldComparison from './components/CrossChainYieldComparison';
+import WAVAXDepositCard from './components/WAVAXDepositCard';
 import { useWeb3 } from './lib/Web3Context';
 
 interface MetricCardProps {
@@ -482,6 +483,18 @@ const SubnetYieldDashboard: React.FC = () => {
                   <YieldDataCard key={tokenAddress} tokenAddress={tokenAddress} />
                 ))}
               </div>
+            </div>
+
+            {/* WAVAX Deposit Section */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-white text-xl font-semibold">Deposit & Earn</h2>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
+                  <span className="text-gray-400 text-sm">Uniswap V2</span>
+                </div>
+              </div>
+              <WAVAXDepositCard />
             </div>
 
             {/* Cross-Chain Yield Comparison */}
