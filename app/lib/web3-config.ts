@@ -15,10 +15,18 @@ export const FUJI_TESTNET_CONFIG = {
 export const CONTRACT_CONFIG = {
   YIELD_HUB_ADDRESS: '0x15855D3E2fbC21694e65469Cc824eC61c2B62b27',
   TELEPORTER_MESSENGER: '0x253b2784c75e510dD0fF1da844684a1aC0aa5fcf',
-  // Supported tokens on Fuji testnet
+  // Aave V3 Integration
+  AAVE_ADAPTER_ADDRESS: '0x0000000000000000000000000000000000000000', // TODO: Deploy AaveV3Adapter
+  AAVE_ADDRESSES_PROVIDER: '0xa97684ead0e402dC232d5A977953DF7ECBaB3CDb', // Aave V3 on Fuji
+  AAVE_DATA_PROVIDER: '0x69FA688f1Dc47d4B5d8029D5a35FB7a548310654', // Aave V3 Data Provider on Fuji
+  // Supported tokens on Fuji testnet (from contract)
   TOKENS: {
-    WETH: '0x28A8E6e41F84e62284970E4bc0867cEe2AAd0DA4',
-    WAVAX: '0xd00ae08403B9bbb9124bB305C09058E32C39A48c', // Standard WAVAX on Fuji
+    WAVAX: '0xd00ae08403B9bbb9124bB305C09058E32C39A48c', // WAVAX - supported
+    WETH: '0x28A8E6e41F84e62284970E4bc0867cEe2AAd0DA4', // WETH - supported  
+    TOKEN3: '0x407287b03D1167593AF113d32093942be13A535f', // Additional supported token
+    TOKEN4: '0xD90db1ca5A6e9873BCD9B0279AE038272b656728', // Additional supported token
+    TOKEN5: '0x3E937B4881CBd500d05EeDAB7BA203f2b7B3f74f', // Additional supported token
+    TOKEN6: '0xFc7215C9498Fc12b22Bc0ed335871Db4315f03d3', // Additional supported token
   },
 } as const;
 
@@ -102,17 +110,41 @@ export const YIELDHUB_ABI = [
 
 // Token metadata for display
 export const TOKEN_INFO = {
+  [CONTRACT_CONFIG.TOKENS.WAVAX]: {
+    symbol: 'WAVAX',
+    name: 'Wrapped AVAX',
+    decimals: 18,
+    icon: '🏔️',
+  },
   [CONTRACT_CONFIG.TOKENS.WETH]: {
     symbol: 'WETH',
     name: 'Wrapped Ether',
     decimals: 18,
     icon: '🔗',
   },
-  [CONTRACT_CONFIG.TOKENS.WAVAX]: {
-    symbol: 'WAVAX',
-    name: 'Wrapped AVAX',
+  [CONTRACT_CONFIG.TOKENS.TOKEN3]: {
+    symbol: 'TOKEN3',
+    name: 'Test Token 3',
     decimals: 18,
-    icon: '🏔️',
+    icon: '🪙',
+  },
+  [CONTRACT_CONFIG.TOKENS.TOKEN4]: {
+    symbol: 'TOKEN4',
+    name: 'Test Token 4',
+    decimals: 18,
+    icon: '💰',
+  },
+  [CONTRACT_CONFIG.TOKENS.TOKEN5]: {
+    symbol: 'TOKEN5',
+    name: 'Test Token 5',
+    decimals: 18,
+    icon: '🎯',
+  },
+  [CONTRACT_CONFIG.TOKENS.TOKEN6]: {
+    symbol: 'TOKEN6',
+    name: 'Test Token 6',
+    decimals: 18,
+    icon: '💎',
   },
 } as const;
 

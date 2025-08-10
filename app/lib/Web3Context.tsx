@@ -106,11 +106,11 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
         symbol: tokenInfo?.symbol || 'UNKNOWN',
         name: tokenInfo?.name || 'Unknown Token',
         apy: '0.00%',
-        rawAPY: 0n,
+        rawAPY: BigInt(0),
         tvl: '$0',
-        rawTVL: 0n,
+        rawTVL: BigInt(0),
         optimizedAPY: '0.00%',
-        rawOptimizedAPY: 0n,
+        rawOptimizedAPY: BigInt(0),
         isDataFresh: false,
         lastUpdate: 0,
         isLoading: false,
@@ -291,10 +291,8 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
 
       for (const token of tokensToRefresh) {
         try {
-          // Get Aave details
+          // Use the same approach as the working yield optimizer service
           const [apyBps, tvl, liquidityIndex, lastUpdate] = await yieldHubContract.getAaveDetails(token);
-          
-          // Get optimized APY
           const optimizedAPY = await yieldHubContract.calculateOptimizedAPY(token);
           
           // Check data freshness
@@ -314,11 +312,33 @@ export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
           };
         } catch (error) {
           console.error(`Error fetching data for token ${token}:`, error);
-          updatedData[token] = {
-            ...updatedData[token],
-            isLoading: false,
-            error: 'Failed to fetch data',
-          };
+          
+          // Fallback to individual methods only if getAaveDetails fails
+          try {
+            console.log(`Trying individual methods for ${token}...`);
+            const apyBps = await yieldHubContract.getAaveAPY(token);
+            const tvl = await yieldHubContract.getAaveTVL(token);
+            
+            updatedData[token] = {
+              ...updatedData[token],
+              rawAPY: apyBps,
+              apy: formatAPY(apyBps),
+              rawTVL: tvl,
+              tvl: formatTVL(tvl),
+              rawOptimizedAPY: apyBps, // Use APY as optimized fallback
+              optimizedAPY: formatAPY(apyBps),
+              isDataFresh: true, // Assume fresh for individual methods
+              lastUpdate: Math.floor(Date.now() / 1000),
+              isLoading: false,
+            };
+          } catch (fallbackError) {
+            console.error(`Fallback also failed for ${token}:`, fallbackError);
+            updatedData[token] = {
+              ...updatedData[token],
+              isLoading: false,
+              error: 'Failed to fetch data',
+            };
+          }
         }
       }
 

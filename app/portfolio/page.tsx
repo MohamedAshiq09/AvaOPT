@@ -1,8 +1,11 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Bell, X } from 'lucide-react';
+import { Bell, X, RefreshCw, AlertTriangle, TrendingUp, TrendingDown } from 'lucide-react';
 import Navbar from '../Navbar';
+import { useWeb3 } from '../lib/Web3Context';
+import PortfolioService, { PortfolioSummary, PortfolioMetrics } from '../lib/portfolio-service';
+import CrossChainYieldComparison from '../components/CrossChainYieldComparison';
 
 interface Transaction {
   type: string;
@@ -19,68 +22,75 @@ interface TransactionModalProps {
 const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onClose }) => {
   if (!isOpen) return null; 
 
-  const transactions: Transaction[] = [
-    {
-      type: 'Deposit',
-      amount: '+$1,000',
-      subnet: 'Subnet A',
-      timestamp: '2024-07-26 10:00 AM'
-    },
-    {
-      type: 'Withdrawal',
-      amount: '-$500',
-      subnet: 'Subnet B',
-      timestamp: '2024-07-25 02:30 PM'
-    },
-    {
-      type: 'Yield Earned',
-      amount: '+$50',
-      subnet: 'Subnet A',
-      timestamp: '2024-07-24 09:15 AM'
-    },
-    {
-      type: 'Deposit',
-      amount: '+$2,000',
-      subnet: 'Subnet C',
-      timestamp: '2024-07-23 04:45 PM'
-    },
-    {
-      type: 'Withdrawal',
-      amount: '-$1,200',
-      subnet: 'Subnet B',
-      timestamp: '2024-07-22 11:00 AM'
-    },
-    {
-      type: 'Yield Earned',
-      amount: '+$75',
-      subnet: 'Subnet C',
-      timestamp: '2024-07-21 08:30 AM'
-    },
-    {
-      type: 'Deposit',
-      amount: '+$3,500',
-      subnet: 'Subnet A',
-      timestamp: '2024-07-20 06:15 PM'
-    },
-    {
-      type: 'Withdrawal',
-      amount: '-$800',
-      subnet: 'Subnet B',
-      timestamp: '2024-07-19 01:45 PM'
-    },
-    {
-      type: 'Yield Earned',
-      amount: '+$120',
-      subnet: 'Subnet A',
-      timestamp: '2024-07-18 11:20 AM'
-    },
-    {
-      type: 'Deposit',
-      amount: '+$1,500',
-      subnet: 'Subnet C',
-      timestamp: '2024-07-17 03:30 PM'
-    }
-  ];
+  // Generate transactions based on portfolio positions (mock enhanced data)
+  const generateTransactions = (): Transaction[] => {
+    const baseTransactions = [
+      {
+        type: 'Aave Supply',
+        amount: '+$1,000',
+        subnet: 'Fuji Testnet',
+        timestamp: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toLocaleString()
+      },
+      {
+        type: 'Token Transfer',
+        amount: '-$500',
+        subnet: 'Fuji Testnet',
+        timestamp: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toLocaleString()
+      },
+      {
+        type: 'Yield Earned',
+        amount: '+$50',
+        subnet: 'Aave V3',
+        timestamp: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toLocaleString()
+      },
+      {
+        type: 'Wallet Deposit',
+        amount: '+$2,000',
+        subnet: 'Fuji Testnet',
+        timestamp: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toLocaleString()
+      },
+      {
+        type: 'Aave Withdraw',
+        amount: '-$1,200',
+        subnet: 'Aave V3',
+        timestamp: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toLocaleString()
+      },
+      {
+        type: 'Yield Earned',
+        amount: '+$75',
+        subnet: 'Aave V3',
+        timestamp: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toLocaleString()
+      },
+      {
+        type: 'Token Swap',
+        amount: '+$3,500',
+        subnet: 'Fuji Testnet',
+        timestamp: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toLocaleString()
+      },
+      {
+        type: 'Aave Borrow',
+        amount: '-$800',
+        subnet: 'Aave V3',
+        timestamp: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toLocaleString()
+      },
+      {
+        type: 'Yield Earned',
+        amount: '+$120',
+        subnet: 'Aave V3',
+        timestamp: new Date(Date.now() - 9 * 24 * 60 * 60 * 1000).toLocaleString()
+      },
+      {
+        type: 'Portfolio Rebalance',
+        amount: '+$1,500',
+        subnet: 'SubnetYield Core',
+        timestamp: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toLocaleString()
+      }
+    ];
+    
+    return baseTransactions;
+  };
+
+  const transactions = generateTransactions();
 
   return (
     <div className="fixed inset-0 backdrop-blur-sm bg-opacity-100 flex items-center justify-center z-50 p-4">
@@ -134,9 +144,67 @@ const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onClose }) 
 };
 
 const SubnetYieldPortfolio: React.FC = () => {
+  const { provider, account, isConnected, chainId } = useWeb3();
   const [isTransactionModalOpen, setIsTransactionModalOpen] = useState<boolean>(false);
   const [isClient, setIsClient] = useState<boolean>(false);
   const cardRefs = useRef<(HTMLDivElement | null)[]>([]);
+  
+  // Backend integration state
+  const [portfolioService, setPortfolioService] = useState<PortfolioService | null>(null);
+  const [portfolioSummary, setPortfolioSummary] = useState<PortfolioSummary | null>(null);
+  const [portfolioMetrics, setPortfolioMetrics] = useState<PortfolioMetrics | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+
+  // Initialize portfolio service
+  useEffect(() => {
+    if (provider && chainId === 43113) {
+      const service = new PortfolioService(provider);
+      setPortfolioService(service);
+    } else {
+      setPortfolioService(null);
+    }
+  }, [provider, chainId]);
+
+  // Load portfolio data
+  const loadPortfolioData = async () => {
+    if (!portfolioService || !account) return;
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const [summary, metrics] = await Promise.all([
+        portfolioService.getPortfolioSummary(account),
+        portfolioService.getPortfolioMetrics(account)
+      ]);
+
+      setPortfolioSummary(summary);
+      setPortfolioMetrics(metrics);
+      setLastUpdate(new Date());
+    } catch (err: any) {
+      console.error('Error loading portfolio data:', err);
+      setError(err.message || 'Failed to load portfolio data');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Load data when service and account are ready
+  useEffect(() => {
+    if (portfolioService && account) {
+      loadPortfolioData();
+    }
+  }, [portfolioService, account]);
+
+  // Auto-refresh every 60 seconds
+  useEffect(() => {
+    if (!portfolioService || !account) return;
+
+    const interval = setInterval(loadPortfolioData, 60000);
+    return () => clearInterval(interval);
+  }, [portfolioService, account]);
 
   // Ensure client-side hydration and animate cards
   useEffect(() => {
@@ -171,35 +239,84 @@ const SubnetYieldPortfolio: React.FC = () => {
     </svg>
   );
 
-  const PerformanceChart: React.FC = () => (
-    <div className="min-h-[180px] flex flex-col gap-8 py-4">
-      <svg width="100%" height="148" viewBox="-3 0 478 150" fill="none" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
-        <path
-          d="M0 109C18.1538 109 18.1538 21 36.3077 21C54.4615 21 54.4615 41 72.6154 41C90.7692 41 90.7692 93 108.923 93C127.077 93 127.077 33 145.231 33C163.385 33 163.385 101 181.538 101C199.692 101 199.692 61 217.846 61C236 61 236 45 254.154 45C272.308 45 272.308 121 290.462 121C308.615 121 308.615 149 326.769 149C344.923 149 344.923 1 363.077 1C381.231 1 381.231 81 399.385 81C417.538 81 417.538 129 435.692 129C453.846 129 453.846 25 472 25V149H326.769H0V109Z"
-          fill="url(#paint0_linear)"
-        />
-        <path
-          d="M0 109C18.1538 109 18.1538 21 36.3077 21C54.4615 21 54.4615 41 72.6154 41C90.7692 41 90.7692 93 108.923 93C127.077 93 127.077 33 145.231 33C163.385 33 163.385 101 181.538 101C199.692 101 199.692 61 217.846 61C236 61 236 45 254.154 45C272.308 45 272.308 121 290.462 121C308.615 121 308.615 149 326.769 149C344.923 149 344.923 1 363.077 1C381.231 1 381.231 81 399.385 81C417.538 81 417.538 129 435.692 129C453.846 129 453.846 25 472 25"
-          stroke="#00ffaa"
-          strokeWidth="3"
-          strokeLinecap="round"
-        />
-        <defs>
-          <linearGradient id="paint0_linear" x1="236" y1="1" x2="236" y2="149" gradientUnits="userSpaceOnUse">
-            <stop stopColor="#00ffaa20" />
-            <stop offset="1" stopColor="#00ffaa20" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-      </svg>
-      <div className="flex justify-around">
-        {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul'].map((month) => (
-          <p key={month} className="text-[#777] text-[13px] font-bold leading-normal tracking-[0.015em] hover:text-[#aaa] transition-colors duration-300">
-            {month}
-          </p>
-        ))}
+  // Generate chart data from real portfolio data
+  const getChartData = () => {
+    if (!portfolioSummary || !portfolioService) {
+      return { svgPath: '', labels: [] };
+    }
+    
+    return portfolioService.getChartData(portfolioSummary.performanceHistory);
+  };
+
+  const PerformanceChart: React.FC = () => {
+    const chartData = getChartData();
+    
+    return (
+      <div className="min-h-[180px] flex flex-col gap-8 py-4">
+        {isLoading ? (
+          <div className="flex items-center justify-center h-[148px]">
+            <RefreshCw className="w-6 h-6 text-blue-400 animate-spin" />
+          </div>
+        ) : chartData.svgPath ? (
+          <svg width="100%" height="148" viewBox="-3 0 478 150" fill="none" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="portfolioPageGradient" x1="236" y1="1" x2="236" y2="149" gradientUnits="userSpaceOnUse">
+                <stop stopColor="#00ffaa20" />
+                <stop offset="1" stopColor="#00ffaa20" stopOpacity="0" />
+              </linearGradient>
+            </defs>
+            <path
+              d={`${chartData.svgPath}V149H0V109Z`}
+              fill="url(#portfolioPageGradient)"
+            />
+            <path
+              d={chartData.svgPath}
+              stroke="#00ffaa"
+              strokeWidth="3"
+              strokeLinecap="round"
+              fill="none"
+            />
+          </svg>
+        ) : (
+          // Fallback to original static chart
+          <svg width="100%" height="148" viewBox="-3 0 478 150" fill="none" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
+            <path
+              d="M0 109C18.1538 109 18.1538 21 36.3077 21C54.4615 21 54.4615 41 72.6154 41C90.7692 41 90.7692 93 108.923 93C127.077 93 127.077 33 145.231 33C163.385 33 163.385 101 181.538 101C199.692 101 199.692 61 217.846 61C236 61 236 45 254.154 45C272.308 45 272.308 121 290.462 121C308.615 121 308.615 149 326.769 149C344.923 149 344.923 1 363.077 1C381.231 1 381.231 81 399.385 81C417.538 81 417.538 129 435.692 129C453.846 129 453.846 25 472 25V149H326.769H0V109Z"
+              fill="url(#paint0_linear)"
+            />
+            <path
+              d="M0 109C18.1538 109 18.1538 21 36.3077 21C54.4615 21 54.4615 41 72.6154 41C90.7692 41 90.7692 93 108.923 93C127.077 93 127.077 33 145.231 33C163.385 33 163.385 101 181.538 101C199.692 101 199.692 61 217.846 61C236 61 236 45 254.154 45C272.308 45 272.308 121 290.462 121C308.615 121 308.615 149 326.769 149C344.923 149 344.923 1 363.077 1C381.231 1 381.231 81 399.385 81C417.538 81 417.538 129 435.692 129C453.846 129 453.846 25 472 25"
+              stroke="#00ffaa"
+              strokeWidth="3"
+              strokeLinecap="round"
+            />
+            <defs>
+              <linearGradient id="paint0_linear" x1="236" y1="1" x2="236" y2="149" gradientUnits="userSpaceOnUse">
+                <stop stopColor="#00ffaa20" />
+                <stop offset="1" stopColor="#00ffaa20" stopOpacity="0" />
+              </linearGradient>
+            </defs>
+          </svg>
+        )}
+        
+        <div className="flex justify-around">
+          {chartData.labels.length > 0 ? (
+            chartData.labels.slice(-7).map((label, index) => (
+              <p key={index} className="text-[#777] text-[13px] font-bold leading-normal tracking-[0.015em] hover:text-[#aaa] transition-colors duration-300">
+                {label}
+              </p>
+            ))
+          ) : (
+            ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul'].map((month) => (
+              <p key={month} className="text-[#777] text-[13px] font-bold leading-normal tracking-[0.015em] hover:text-[#aaa] transition-colors duration-300">
+                {month}
+              </p>
+            ))
+          )}
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <div 
@@ -224,14 +341,61 @@ const SubnetYieldPortfolio: React.FC = () => {
                     View your asset balances, historical performance, and manage your investments across different subnets.
                   </p>
                 </div>
-                <button
-                  onClick={() => setIsTransactionModalOpen(true)}
-                  className="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-8 px-4 bg-[#00ffaa20] text-[#00ffaa] hover:bg-[#00ffaa30] hover:text-white hover:shadow-[0_0_15px_rgba(0,255,170,0.3)] text-sm font-medium leading-normal transition-all duration-300"
-                >
-                  <span className="truncate">View Transactions</span>
-                </button>
+                <div className="flex items-center gap-3">
+                  {/* Connection Status */}
+                  <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium ${
+                    isConnected && account && chainId === 43113
+                      ? 'bg-green-900/30 text-green-400'
+                      : 'bg-red-900/30 text-red-400'
+                  }`}>
+                    <div className={`w-2 h-2 rounded-full ${
+                      isConnected && account && chainId === 43113 ? 'bg-green-400' : 'bg-red-400'
+                    }`} />
+                    {isConnected && account && chainId === 43113 ? 'Live Data' : 'Connect Wallet'}
+                  </div>
+                  
+                  {/* Refresh Button */}
+                  <button
+                    onClick={loadPortfolioData}
+                    disabled={isLoading || !portfolioService}
+                    className="flex items-center gap-2 px-3 py-1 bg-[#283039] hover:bg-[#374151] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-medium rounded-lg transition-colors"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isLoading ? 'animate-spin' : ''}`} />
+                    {isLoading ? 'Loading...' : 'Refresh'}
+                  </button>
+                  
+                  {/* View Transactions Button */}
+                  <button
+                    onClick={() => setIsTransactionModalOpen(true)}
+                    className="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-8 px-4 bg-[#00ffaa20] text-[#00ffaa] hover:bg-[#00ffaa30] hover:text-white hover:shadow-[0_0_15px_rgba(0,255,170,0.3)] text-sm font-medium leading-normal transition-all duration-300"
+                  >
+                    <span className="truncate">View Transactions</span>
+                  </button>
+                </div>
               </div>
             </div>
+
+            {/* Connection Warning */}
+            {(!isConnected || !account || chainId !== 43113) && (
+              <div className="flex items-center gap-2 p-4 mx-4 bg-orange-900/20 border border-orange-600 rounded-lg">
+                <AlertTriangle className="w-4 h-4 text-orange-400" />
+                <span className="text-orange-400 text-sm font-medium">
+                  {!isConnected 
+                    ? 'Connect your wallet to view real portfolio data' 
+                    : !account
+                    ? 'Wallet connection required'
+                    : 'Switch to Fuji testnet for live portfolio tracking'}
+                </span>
+              </div>
+            )}
+
+            {/* Error Display */}
+            {error && (
+              <div className="flex items-center gap-2 p-4 mx-4 bg-red-900/20 border border-red-600 rounded-lg">
+                <AlertTriangle className="w-4 h-4 text-red-400" />
+                <span className="text-red-400 text-sm font-medium">{error}</span>
+              </div>
+            )}
 
             {/* Overview Section */}
             <div className="group" ref={el => cardRefs.current[0] = el}>
@@ -243,28 +407,186 @@ const SubnetYieldPortfolio: React.FC = () => {
             
             {/* Overview Cards */}
             <div className="group flex flex-wrap gap-4 p-4" ref={el => cardRefs.current[1] = el}>
-              <div className="flex min-w-[158px] flex-1 flex-col gap-2 rounded-lg p-6 bg-[#111418] border border-[#2a2a2a] hover:border-[#00ffaa] hover: hover:bg-[#1a1a1a] transition-all duration-300">
+              <div className="flex min-w-[158px] flex-1 flex-col gap-2 rounded-lg p-6 bg-[#111418] border border-[#2a2a2a] hover:border-[#00ffaa] hover:bg-[#1a1a1a] transition-all duration-300">
                 <p className="text-[#aaa] text-base font-medium leading-normal">Total Portfolio Value</p>
-                <p className="text-white tracking-light text-2xl font-bold leading-tight">$12,345.67</p>
-                <p className="text-[#00ffaa] text-base font-medium leading-normal">+2.5%</p>
+                <p className="text-white tracking-light text-2xl font-bold leading-tight">
+                  {isLoading ? (
+                    <div className="animate-pulse bg-[#283039] rounded h-8 w-32"></div>
+                  ) : portfolioSummary ? (
+                    PortfolioService.formatCurrency(portfolioSummary.totalValueUSD)
+                  ) : (
+                    '$0.00'
+                  )}
+                </p>
+                <div className="flex items-center gap-1">
+                  {portfolioMetrics && portfolioMetrics.change30d !== 0 && (
+                    <>
+                      {portfolioMetrics.change30d >= 0 ? (
+                        <TrendingUp className="w-4 h-4 text-[#00ffaa]" />
+                      ) : (
+                        <TrendingDown className="w-4 h-4 text-[#ff5555]" />
+                      )}
+                      <p className={`text-base font-medium leading-normal ${
+                        portfolioMetrics.change30d >= 0 ? 'text-[#00ffaa]' : 'text-[#ff5555]'
+                      }`}>
+                        {PortfolioService.formatPercentage(portfolioMetrics.change30d)}
+                      </p>
+                    </>
+                  )}
+                  {(!portfolioMetrics || portfolioMetrics.change30d === 0) && (
+                    <p className="text-[#777] text-base font-medium leading-normal">
+                      {isConnected && account && chainId === 43113 ? 'No change' : 'Connect wallet'}
+                    </p>
+                  )}
+                </div>
               </div>
               <div className="flex min-w-[158px] flex-1 flex-col gap-2 rounded-lg p-6 bg-[#111418] border border-[#2a2a2a] hover:border-[#00ffaa] hover:bg-[#1a1a1a] transition-all duration-300">
                 <p className="text-[#aaa] text-base font-medium leading-normal">Total Yield Earned</p>
-                <p className="text-white tracking-light text-2xl font-bold leading-tight">$567.89</p>
-                <p className="text-[#00ffaa] text-base font-medium leading-normal">+1.2%</p>
+                <p className="text-white tracking-light text-2xl font-bold leading-tight">
+                  {isLoading ? (
+                    <div className="animate-pulse bg-[#283039] rounded h-8 w-32"></div>
+                  ) : portfolioSummary ? (
+                    PortfolioService.formatCurrency(portfolioSummary.totalEarnedYield)
+                  ) : (
+                    '$0.00'
+                  )}
+                </p>
+                <div className="flex items-center gap-1">
+                  {portfolioMetrics && portfolioMetrics.averageAPY > 0 && (
+                    <>
+                      <TrendingUp className="w-4 h-4 text-[#00ffaa]" />
+                      <p className="text-[#00ffaa] text-base font-medium leading-normal">
+                        {PortfolioService.formatAPY(portfolioMetrics.averageAPY)} APY
+                      </p>
+                    </>
+                  )}
+                  {(!portfolioMetrics || portfolioMetrics.averageAPY === 0) && (
+                    <p className="text-[#777] text-base font-medium leading-normal">
+                      {isConnected && account && chainId === 43113 ? 'No yield' : 'Connect wallet'}
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
 
             {/* Performance Chart */}
             <div className="group flex flex-wrap gap-4 px-4 py-6" ref={el => cardRefs.current[2] = el}>
               <div className="flex min-w-72 flex-1 flex-col gap-2 rounded-lg border border-[#2a2a2a] bg-[#111418] p-6 hover:border-[#00ffaa] hover:bg-[#1a1a1a] transition-all duration-300">
-                <p className="text-[#aaa] text-base font-medium leading-normal">Portfolio Performance</p>
-                <p className="text-white tracking-light text-[32px] font-bold leading-tight truncate">$12,345.67</p>
-                <div className="flex gap-1">
-                  <p className="text-[#777] text-base font-normal leading-normal">Last 30 Days</p>
-                  <p className="text-[#00ffaa] text-base font-medium leading-normal">+2.5%</p>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-[#aaa] text-base font-medium leading-normal">Portfolio Performance</p>
+                  {lastUpdate && (
+                    <span className="text-[#777] text-xs">
+                      Updated: {lastUpdate.toLocaleTimeString()}
+                    </span>
+                  )}
+                </div>
+                <p className="text-white tracking-light text-[32px] font-bold leading-tight truncate">
+                  {isLoading ? (
+                    <div className="animate-pulse bg-[#283039] rounded h-10 w-48"></div>
+                  ) : portfolioSummary ? (
+                    PortfolioService.formatCurrency(portfolioSummary.totalValueUSD)
+                  ) : (
+                    '$0.00'
+                  )}
+                </p>
+                <div className="flex gap-4">
+                  <div className="flex gap-1">
+                    <p className="text-[#777] text-base font-normal leading-normal">Last 30 Days</p>
+                    {portfolioMetrics && (
+                      <div className="flex items-center gap-1">
+                        {portfolioMetrics.change30d >= 0 ? (
+                          <TrendingUp className="w-4 h-4 text-[#00ffaa]" />
+                        ) : (
+                          <TrendingDown className="w-4 h-4 text-[#ff5555]" />
+                        )}
+                        <p className={`text-base font-medium leading-normal ${
+                          portfolioMetrics.change30d >= 0 ? 'text-[#00ffaa]' : 'text-[#ff5555]'
+                        }`}>
+                          {PortfolioService.formatPercentage(portfolioMetrics.change30d)}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                  {portfolioMetrics && (
+                    <div className="flex gap-1">
+                      <p className="text-[#777] text-base font-normal leading-normal">7d:</p>
+                      <p className={`text-base font-medium leading-normal ${
+                        portfolioMetrics.change7d >= 0 ? 'text-[#00ffaa]' : 'text-[#ff5555]'
+                      }`}>
+                        {PortfolioService.formatPercentage(portfolioMetrics.change7d)}
+                      </p>
+                    </div>
+                  )}
                 </div>
                 <PerformanceChart />
+              </div>
+            </div>
+
+            {/* Cross-Chain Yield Opportunities */}
+            <div className="px-4 py-6">
+              <CrossChainYieldComparison />
+            </div>
+
+            {/* Portfolio Summary Footer */}
+            {portfolioSummary && (
+              <div className="px-4 py-6">
+                <div className="rounded-lg border border-[#2a2a2a] bg-[#111418] p-4 hover:border-[#00ffaa] transition-all duration-300">
+                  <h3 className="text-white text-sm font-medium mb-3">Portfolio Summary</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div>
+                      <span className="text-[#777]">Net Worth: </span>
+                      <span className="text-white font-medium">
+                        {PortfolioService.formatCurrency(portfolioSummary.netWorth)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[#777]">Supplied: </span>
+                      <span className="text-green-400 font-medium">
+                        {PortfolioService.formatCurrency(portfolioSummary.totalSuppliedUSD)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[#777]">Borrowed: </span>
+                      <span className="text-red-400 font-medium">
+                        {PortfolioService.formatCurrency(portfolioSummary.totalBorrowedUSD)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[#777]">Health Factor: </span>
+                      <span className={`font-medium ${
+                        portfolioSummary.healthFactor >= 2 ? 'text-green-400' :
+                        portfolioSummary.healthFactor >= 1.5 ? 'text-yellow-400' : 'text-red-400'
+                      }`}>
+                        {portfolioSummary.healthFactor.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Status Footer */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-4 py-6 border-t border-[#2a2a2a]">
+              <div className="flex items-center gap-4 text-sm text-[#777]">
+                <span>
+                  {portfolioSummary ? 
+                    `${portfolioSummary.positions.length} positions tracked` : 
+                    'No positions found'
+                  }
+                </span>
+                <span>•</span>
+                <span>Auto-refresh: 60s</span>
+                {lastUpdate && (
+                  <>
+                    <span>•</span>
+                    <span>Last update: {lastUpdate.toLocaleTimeString()}</span>
+                  </>
+                )}
+              </div>
+              
+              <div className="flex items-center gap-2 text-sm text-[#777]">
+                <span>Powered by SubnetYield Core</span>
+                <div className="w-2 h-2 bg-[#00ffaa] rounded-full animate-pulse" />
               </div>
             </div>
           </div>

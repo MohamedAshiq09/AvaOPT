@@ -19,6 +19,7 @@
     "deploy:dfk-testnet": "hardhat run scripts/deploy.ts --network dfk_testnet",
     "deploy:mainnet": "hardhat run scripts/deploy.ts --network mainnet",
     "deploy:local": "hardhat run scripts/deploy.ts --network localhost",
+    "deploy:aave-adapter": "hardhat run scripts/deploy-aave-adapter.ts --network fuji",
     "verify:fuji": "hardhat run scripts/verify.ts --network fuji",
     "verify:manual": "hardhat run scripts/manual-verify.ts --network fuji",
     "interact:fuji": "hardhat run scripts/interact.ts --network fuji",
