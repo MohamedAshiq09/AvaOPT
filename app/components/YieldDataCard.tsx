@@ -416,7 +416,7 @@ const YieldDataCard: React.FC<YieldDataCardProps> = ({ tokenAddress }) => {
               <span className="text-white text-sm font-bold">A</span>
             </div>
           </div>
-          
+
           {/* Token Name */}
           <div>
             <h2 className="text-white text-lg font-bold tracking-tight">
