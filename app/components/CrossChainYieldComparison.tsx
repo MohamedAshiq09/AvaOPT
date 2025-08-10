@@ -256,113 +256,125 @@ const CrossChainYieldComparison: React.FC = () => {
 
       {/* Yield Comparison Cards */}
       {isLoading ? (
-        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
           {Array.from({ length: 3 }).map((_, index) => (
-            <div key={index} className="bg-[#1b2127] border border-[#3b4754] rounded-lg p-6">
+            <div key={index} className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-6">
               <div className="animate-pulse space-y-4">
-                <div className="h-4 bg-[#283039] rounded w-1/2"></div>
-                <div className="h-8 bg-[#283039] rounded w-3/4"></div>
-                <div className="h-4 bg-[#283039] rounded w-full"></div>
+                <div className="h-4 bg-white/10 rounded w-1/2"></div>
+                <div className="h-8 bg-white/10 rounded w-3/4"></div>
+                <div className="h-4 bg-white/10 rounded w-full"></div>
               </div>
             </div>
           ))}
         </div>
       ) : comparisons.length > 0 ? (
-        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
           {comparisons.map((comparison, index) => (
             <div
               key={comparison.tokenAddress}
-              className="bg-[#1b2127] border border-[#3b4754] rounded-lg p-6 hover:border-[#00ffaa] transition-all duration-300"
+              className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-6 hover:border-[#00ffaa]/50 hover:bg-white/10 transition-all duration-300 group"
             >
               {/* Token Header */}
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-between mb-6">
                 <div>
-                  <h3 className="text-white text-lg font-bold">{comparison.tokenSymbol}</h3>
-                  <p className="text-[#9cabba] text-sm">Cross-Chain Comparison</p>
+                  <h3 className="text-white text-xl font-bold group-hover:text-[#00ffaa] transition-colors">{comparison.tokenSymbol}</h3>
+                  <p className="text-white/60 text-sm">Cross-Chain Comparison</p>
                 </div>
                 {getRecommendationBadge(comparison.recommendedChain)}
               </div>
 
-              {/* Yield Comparison */}
-              <div className="space-y-3 mb-4">
+              {/* Yield Comparison - Cleaner Layout */}
+              <div className="space-y-4 mb-6">
                 {/* C-Chain (Aave) */}
-                <div className="flex items-center justify-between p-3 bg-[#283039] rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-green-400 rounded-full"></div>
-                    <span className="text-white text-sm font-medium">C-Chain (Aave)</span>
+                <div className="flex items-center justify-between p-4 bg-white/5 rounded-lg border border-white/10">
+                  <div className="flex items-center gap-3">
+                    <div className="w-3 h-3 bg-green-400 rounded-full"></div>
+                    <div>
+                      <span className="text-white text-sm font-semibold">C-Chain</span>
+                      <p className="text-white/60 text-xs">Aave V3</p>
+                    </div>
                   </div>
-                  <span className="text-green-400 font-bold">{comparison.cChainAPY.toFixed(2)}%</span>
+                  <span className="text-green-400 text-lg font-bold">{comparison.cChainAPY.toFixed(2)}%</span>
                 </div>
 
                 {/* Subnet */}
-                <div className="flex items-center justify-between p-3 bg-[#283039] rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
-                    <span className="text-white text-sm font-medium">Subnet (DEX)</span>
+                <div className="flex items-center justify-between p-4 bg-white/5 rounded-lg border border-white/10">
+                  <div className="flex items-center gap-3">
+                    <div className="w-3 h-3 bg-blue-400 rounded-full"></div>
+                    <div>
+                      <span className="text-white text-sm font-semibold">Subnet</span>
+                      <p className="text-white/60 text-xs">DEX Protocol</p>
+                    </div>
                   </div>
-                  <span className="text-blue-400 font-bold">{comparison.subnetAPY.toFixed(2)}%</span>
+                  <span className="text-blue-400 text-lg font-bold">{comparison.subnetAPY.toFixed(2)}%</span>
                 </div>
 
                 {/* Optimized */}
-                <div className="flex items-center justify-between p-3 bg-[#283039] rounded-lg border border-purple-600/30">
-                  <div className="flex items-center gap-2">
+                <div className="flex items-center justify-between p-4 bg-gradient-to-r from-purple-500/10 to-purple-600/10 rounded-lg border border-purple-500/30">
+                  <div className="flex items-center gap-3">
                     <Zap className="w-4 h-4 text-purple-400" />
-                    <span className="text-white text-sm font-medium">Optimized</span>
+                    <div>
+                      <span className="text-white text-sm font-semibold">Optimized</span>
+                      <p className="text-white/60 text-xs">Best Strategy</p>
+                    </div>
                   </div>
-                  <span className="text-purple-400 font-bold">{comparison.optimizedAPY.toFixed(2)}%</span>
+                  <span className="text-purple-400 text-lg font-bold">{comparison.optimizedAPY.toFixed(2)}%</span>
                 </div>
               </div>
 
-              {/* Yield Difference */}
-              <div className="flex items-center justify-between mb-4 p-3 bg-[#1a1a1a] rounded-lg">
-                <div className="flex items-center gap-2">
-                  {getTrendIcon(comparison.yieldDifference)}
-                  <span className="text-[#9cabba] text-sm">Yield Difference</span>
+              {/* Analytics Section */}
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                {/* Yield Difference */}
+                <div className="p-3 bg-white/5 rounded-lg border border-white/10">
+                  <div className="flex items-center gap-2 mb-1">
+                    {getTrendIcon(comparison.yieldDifference)}
+                    <span className="text-white/60 text-xs font-medium">Yield Diff</span>
+                  </div>
+                  <span className={`text-lg font-bold ${
+                    comparison.yieldDifference > 0 ? 'text-green-400' : 
+                    comparison.yieldDifference < 0 ? 'text-red-400' : 'text-gray-400'
+                  }`}>
+                    {comparison.yieldDifference > 0 ? '+' : ''}{comparison.yieldDifference.toFixed(2)}%
+                  </span>
                 </div>
-                <span className={`font-bold ${
-                  comparison.yieldDifference > 0 ? 'text-green-400' : 
-                  comparison.yieldDifference < 0 ? 'text-red-400' : 'text-gray-400'
-                }`}>
-                  {comparison.yieldDifference > 0 ? '+' : ''}{comparison.yieldDifference.toFixed(2)}%
-                </span>
-              </div>
 
-              {/* Risk Assessment */}
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <Shield className="w-4 h-4 text-[#9cabba]" />
-                  <span className="text-[#9cabba] text-sm">Risk Level</span>
+                {/* Risk Assessment */}
+                <div className="p-3 bg-white/5 rounded-lg border border-white/10">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Shield className="w-3 h-3 text-white/60" />
+                    <span className="text-white/60 text-xs font-medium">Risk Level</span>
+                  </div>
+                  <span className={`text-lg font-bold ${SubnetService.getRiskColor(comparison.riskAssessment)}`}>
+                    {comparison.riskAssessment}
+                  </span>
                 </div>
-                <span className={`text-sm font-medium ${SubnetService.getRiskColor(comparison.riskAssessment)}`}>
-                  {comparison.riskAssessment}
-                </span>
               </div>
 
               {/* Action Buttons */}
-              <div className="flex gap-2">
+              <div className="flex gap-3">
                 {!subnetAvailability.isAvailable && (
                   <button
                     onClick={() => requestSubnetData(comparison.tokenAddress)}
                     disabled={!account || isLoading}
-                    className="flex items-center justify-center gap-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-medium rounded-lg transition-colors flex-1"
+                    className="flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-500/20 hover:bg-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed text-blue-400 text-sm font-medium rounded-lg border border-blue-500/30 transition-all duration-200 flex-1"
                   >
-                    <Network className="w-3 h-3" />
+                    <Network className="w-4 h-4" />
                     Request Live Data
                   </button>
                 )}
                 
                 <button
-                  className="flex items-center justify-center gap-1 px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium rounded-lg transition-colors flex-1"
+                  className="flex items-center justify-center gap-2 px-4 py-2.5 bg-[#00ffaa]/20 hover:bg-[#00ffaa]/30 text-[#00ffaa] text-sm font-medium rounded-lg border border-[#00ffaa]/30 transition-all duration-200 flex-1"
                 >
-                  <Target className="w-3 h-3" />
+                  <Target className="w-4 h-4" />
                   Optimize
                 </button>
               </div>
 
               {/* Last Update */}
-              <div className="flex items-center justify-center gap-1 mt-3 pt-3 border-t border-[#3b4754]">
-                <Clock className="w-3 h-3 text-[#777]" />
-                <span className="text-[#777] text-xs">
+              <div className="flex items-center justify-center gap-2 mt-4 pt-4 border-t border-white/10">
+                <Clock className="w-3 h-3 text-white/40" />
+                <span className="text-white/40 text-xs">
                   {lastUpdate ? `Updated ${lastUpdate.toLocaleTimeString()}` : 'No updates'}
                 </span>
               </div>
