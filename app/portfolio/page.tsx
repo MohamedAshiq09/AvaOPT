@@ -523,9 +523,9 @@ const SubnetYieldPortfolio: React.FC = () => {
             </div>
 
             {/* Cross-Chain Yield Opportunities */}
-            <div className="px-4 py-6">
+            {/* <div className="px-4 py-6">
               <CrossChainYieldComparison />
-            </div>
+            </div> */}
 
             {/* Portfolio Summary Footer */}
             {portfolioSummary && (

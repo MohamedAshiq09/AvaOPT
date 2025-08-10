@@ -72,7 +72,7 @@ const CrossChainYieldComparison: React.FC = () => {
         const supportedTokens = [
           '0xd00ae08403B9bbb9124bB305C09058E32C39A48c', // WAVAX
           '0x28A8E6e41F84e62284970E4bc0867cEe2AAd0DA4', // WETH
-          '0x407287b03D1167593AF113d32093942be13A535f'  // TOKEN3
+          '0x407287b03D1167593AF113d32093942be13A535f'  // USDT
         ];
 
         for (const tokenAddress of supportedTokens) {

@@ -23,10 +23,10 @@ export const CONTRACT_CONFIG = {
   TOKENS: {
     WAVAX: '0xd00ae08403B9bbb9124bB305C09058E32C39A48c', // WAVAX - supported
     WETH: '0x28A8E6e41F84e62284970E4bc0867cEe2AAd0DA4', // WETH - supported  
-    TOKEN3: '0x407287b03D1167593AF113d32093942be13A535f', // Additional supported token
-    TOKEN4: '0xD90db1ca5A6e9873BCD9B0279AE038272b656728', // Additional supported token
-    TOKEN5: '0x3E937B4881CBd500d05EeDAB7BA203f2b7B3f74f', // Additional supported token
-    TOKEN6: '0xFc7215C9498Fc12b22Bc0ed335871Db4315f03d3', // Additional supported token
+    USDT: '0x407287b03D1167593AF113d32093942be13A535f', // USDT - Tether USD
+    USDC_E: '0xD90db1ca5A6e9873BCD9B0279AE038272b656728', // USDC.e - Bridged USDC
+    DAI: '0x3E937B4881CBd500d05EeDAB7BA203f2b7B3f74f', // DAI - Dai Stablecoin
+    LINK: '0xFc7215C9498Fc12b22Bc0ed335871Db4315f03d3', // LINK - Chainlink Token
   },
 } as const;
 
@@ -122,29 +122,29 @@ export const TOKEN_INFO = {
     decimals: 18,
     icon: '🔗',
   },
-  [CONTRACT_CONFIG.TOKENS.TOKEN3]: {
-    symbol: 'TOKEN3',
-    name: 'Test Token 3',
-    decimals: 18,
-    icon: '🪙',
+  [CONTRACT_CONFIG.TOKENS.USDT]: {
+    symbol: 'USDT',
+    name: 'Tether USD',
+    decimals: 6,
+    icon: '💵',
   },
-  [CONTRACT_CONFIG.TOKENS.TOKEN4]: {
-    symbol: 'TOKEN4',
-    name: 'Test Token 4',
-    decimals: 18,
-    icon: '💰',
+  [CONTRACT_CONFIG.TOKENS.USDC_E]: {
+    symbol: 'USDC.e',
+    name: 'Bridged USDC',
+    decimals: 6,
+    icon: '🔵',
   },
-  [CONTRACT_CONFIG.TOKENS.TOKEN5]: {
-    symbol: 'TOKEN5',
-    name: 'Test Token 5',
+  [CONTRACT_CONFIG.TOKENS.DAI]: {
+    symbol: 'DAI',
+    name: 'Dai Stablecoin',
     decimals: 18,
-    icon: '🎯',
+    icon: '🟡',
   },
-  [CONTRACT_CONFIG.TOKENS.TOKEN6]: {
-    symbol: 'TOKEN6',
-    name: 'Test Token 6',
+  [CONTRACT_CONFIG.TOKENS.LINK]: {
+    symbol: 'LINK',
+    name: 'Chainlink Token',
     decimals: 18,
-    icon: '💎',
+    icon: '🔗',
   },
 } as const;
 

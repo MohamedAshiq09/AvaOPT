@@ -58,10 +58,10 @@ const SUBNET_CONFIG = {
   SUPPORTED_TOKENS: [
     '0xd00ae08403B9bbb9124bB305C09058E32C39A48c', // WAVAX
     '0x28A8E6e41F84e62284970E4bc0867cEe2AAd0DA4', // WETH
-    '0x407287b03D1167593AF113d32093942be13A535f', // TOKEN3
-    '0xD90db1ca5A6e9873BCD9B0279AE038272b656728', // TOKEN4
-    '0x3E937B4881CBd500d05EeDAB7BA203f2b7B3f74f', // TOKEN5
-    '0xFc7215C9498Fc12b22Bc0ed335871Db4315f03d3'  // TOKEN6
+    '0x407287b03D1167593AF113d32093942be13A535f', // USDT
+    '0xD90db1ca5A6e9873BCD9B0279AE038272b656728', // USDC.e
+    '0x3E937B4881CBd500d05EeDAB7BA203f2b7B3f74f', // DAI
+    '0xFc7215C9498Fc12b22Bc0ed335871Db4315f03d3'  // LINK
   ]
 };
 
@@ -330,10 +330,10 @@ export class SubnetService {
     const tokenMap: Record<string, { symbol: string; name: string }> = {
       '0xd00ae08403B9bbb9124bB305C09058E32C39A48c': { symbol: 'WAVAX', name: 'Wrapped AVAX' },
       '0x28A8E6e41F84e62284970E4bc0867cEe2AAd0DA4': { symbol: 'WETH', name: 'Wrapped Ether' },
-      '0x407287b03D1167593AF113d32093942be13A535f': { symbol: 'TOKEN3', name: 'Test Token 3' },
-      '0xD90db1ca5A6e9873BCD9B0279AE038272b656728': { symbol: 'TOKEN4', name: 'Test Token 4' },
-      '0x3E937B4881CBd500d05EeDAB7BA203f2b7B3f74f': { symbol: 'TOKEN5', name: 'Test Token 5' },
-      '0xFc7215C9498Fc12b22Bc0ed335871Db4315f03d3': { symbol: 'TOKEN6', name: 'Test Token 6' },
+      '0x407287b03D1167593AF113d32093942be13A535f': { symbol: 'USDT', name: 'Tether USD' },
+      '0xD90db1ca5A6e9873BCD9B0279AE038272b656728': { symbol: 'USDC.e', name: 'Bridged USDC' },
+      '0x3E937B4881CBd500d05EeDAB7BA203f2b7B3f74f': { symbol: 'DAI', name: 'Dai Stablecoin' },
+      '0xFc7215C9498Fc12b22Bc0ed335871Db4315f03d3': { symbol: 'LINK', name: 'Chainlink Token' },
     };
     
     return tokenMap[tokenAddress] || { symbol: 'UNKNOWN', name: 'Unknown Token' };
