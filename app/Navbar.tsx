@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { ToastContainer } from 'react-toastify'
-import { Bounce } from 'react-toastify' 
+import { Bounce } from 'react-toastify'
 import 'react-toastify/dist/ReactToastify.css'
 import { useWeb3 } from './lib/Web3Context'
 
@@ -100,17 +100,17 @@ const Navbar: React.FC = () => {
         </div>
         <div className="flex flex-1 justify-end gap-8">
           <div className="flex items-center gap-9">
-            <Link className="text-[#aaa] text-sm font-medium leading-normal hover:text-[#00ffaa] hover:shadow-[0_0_10px_rgba(0,255,170,0.3)] transition-all duration-300 px-2 py-1 rounded" href="/">
+            <Link className="text-[#aaa] text-sm font-medium leading-normal hover:text-[#00ffaa] transition-colors duration-300" href="/">
               Dashboard
             </Link>
-            <Link className="text-[#aaa] text-sm font-medium leading-normal hover:text-[#00ffaa] hover:shadow-[0_0_10px_rgba(0,255,170,0.3)] transition-all duration-300 px-2 py-1 rounded" href="/yield-optimizer">
+            <Link className="text-[#aaa] text-sm font-medium leading-normal hover:text-[#00ffaa] transition-colors duration-300" href="/yield-optimizer">
               Yield Optimizer
             </Link>
-            <Link className="text-[#aaa] text-sm font-medium leading-normal hover:text-[#00ffaa] hover:shadow-[0_0_10px_rgba(0,255,170,0.3)] transition-all duration-300 px-2 py-1 rounded" href="/portfolio">
+            <Link className="text-[#aaa] text-sm font-medium leading-normal hover:text-[#00ffaa] transition-colors duration-300" href="/portfolio">
               Portfolio
             </Link>
           </div>
-          
+
           {/* Wallet Connection Section */}
           {isConnected && account ? (
             <div className="flex items-center gap-2">
@@ -121,7 +121,7 @@ const Navbar: React.FC = () => {
                   {isOnFujiTestnet ? 'Fuji' : `Chain ${chainId}`}
                 </span>
               </div>
-              
+
               {/* Account Address */}
               <div className="flex items-center gap-2 bg-[#283039] rounded-lg px-4 py-2">
                 <div className="w-2 h-2 bg-green-500 rounded-full"></div>
@@ -132,7 +132,7 @@ const Navbar: React.FC = () => {
 
               {/* Switch Network Button */}
               {!isOnFujiTestnet && (
-                <button 
+                <button
                   onClick={handleSwitchToFuji}
                   className="flex items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-orange-600 hover:bg-orange-700 text-white text-sm font-bold leading-normal tracking-[0.015em] transition-colors"
                 >
@@ -141,7 +141,7 @@ const Navbar: React.FC = () => {
               )}
 
               {/* Disconnect Button */}
-              <button 
+              <button
                 onClick={disconnectWallet}
                 className="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-[#ff555520] text-[#ff5555] hover:bg-[#ff555530] hover:text-white hover:shadow-[0_0_15px_rgba(255,85,85,0.3)] text-sm font-bold leading-normal tracking-[0.015em] transition-all duration-300 border border-[#ff555520] hover:border-[#ff5555]"
               >
@@ -149,7 +149,7 @@ const Navbar: React.FC = () => {
               </button>
             </div>
           ) : (
-            <button 
+            <button
               onClick={connectWallet}
               disabled={isConnecting}
               className="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-[#00ffaa20] text-[#00ffaa] hover:bg-[#00ffaa30] hover:text-white hover:shadow-[0_0_15px_rgba(0,255,170,0.3)] disabled:opacity-50 disabled:cursor-not-allowed text-sm font-bold leading-normal tracking-[0.015em] transition-all duration-300 border border-[#00ffaa20] hover:border-[#00ffaa]"
