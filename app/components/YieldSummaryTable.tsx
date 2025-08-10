@@ -65,7 +65,7 @@ const YieldSummaryTable: React.FC = () => {
       {/* Table Header with Refresh Button */}
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-white text-[22px] font-bold leading-tight tracking-[-0.015em]">
-          Real-Time Yield Summary
+          Cross-Chain Yield Summary
         </h2>
         <button
           onClick={handleRefreshAll}
@@ -99,13 +99,13 @@ const YieldSummaryTable: React.FC = () => {
                 Token
               </th>
               <th className="px-4 py-3 text-left text-white text-sm font-medium leading-normal">
-                Aave APY
+                C-Chain APY
               </th>
               <th className="px-4 py-3 text-left text-white text-sm font-medium leading-normal">
                 TVL
               </th>
               <th className="px-4 py-3 text-left text-white text-sm font-medium leading-normal">
-                Optimized APY
+                Cross-Chain APY
               </th>
               <th className="px-4 py-3 text-left text-white text-sm font-medium leading-normal">
                 Status
