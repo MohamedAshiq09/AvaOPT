@@ -7,6 +7,13 @@ import { Bounce } from 'react-toastify'
 import 'react-toastify/dist/ReactToastify.css'
 import { useWeb3 } from './lib/Web3Context'
 
+// Extend Window interface to include ethereum
+declare global {
+  interface Window {
+    ethereum?: any;
+  }
+}
+
 const Navbar: React.FC = () => {
   const [isMounted, setIsMounted] = useState<boolean>(false)
   const {
@@ -23,6 +30,103 @@ const Navbar: React.FC = () => {
     setIsMounted(true)
   }, [])
 
+<<<<<<< HEAD
+=======
+  const isMetaMaskInstalled = (): boolean => {
+    return typeof window !== 'undefined' && typeof window.ethereum !== 'undefined'
+  }
+
+  useEffect(() => {
+    if (!isMounted) return
+
+    const checkConnection = async (): Promise<void> => {
+      if (isMetaMaskInstalled()) {
+        try {
+          const accounts: string[] = await window.ethereum.request({ method: 'eth_accounts' })
+          if (accounts.length > 0) {
+            setAccount(accounts[0])
+          }
+        } catch (error) {
+          console.error('Error checking connection:', error)
+        }
+      }
+    }
+
+    checkConnection()
+
+    if (isMetaMaskInstalled()) {
+      const handleAccountsChanged = (accounts: string[]): void => {
+        if (accounts.length > 0) {
+          setAccount(accounts[0])
+        } else {
+          setAccount(null)
+        }
+      }
+
+      window.ethereum.on('accountsChanged', handleAccountsChanged)
+
+      return () => {
+        if (window.ethereum.removeListener) {
+          window.ethereum.removeListener('accountsChanged', handleAccountsChanged)
+        }
+      }
+    }
+  }, [isMounted])
+
+  const connectWallet = async (): Promise<void> => {
+    if (!isMetaMaskInstalled()) {
+      toast.error('MetaMask is not installed. Please install MetaMask to continue.', {
+        position: 'bottom-right',
+        autoClose: 1000,
+      })
+      return
+    }
+
+    setIsConnecting(true)
+    try {
+      const connectPromise = window.ethereum.request({
+        method: 'eth_requestAccounts',
+      })
+      toast.promise(connectPromise, {
+        pending: {
+          render: 'Connecting to MetaMask...',
+          position: 'top-right',
+          autoClose: 1000,
+        },
+        success: {
+          render: 'Wallet connected successfully!',
+          position: 'top-right',
+          autoClose: 1000,
+        },
+        error: {
+          render: 'Error connecting to MetaMask. Please try again.',
+          position: 'bottom-right',
+          autoClose: 1000,
+        },
+      })
+      const accounts: string[] = await connectPromise
+      setAccount(accounts[0])
+    } catch (error: any) {
+      if (error.code === 4001) {
+        toast.warn('Please connect to MetaMask.', {
+          position: 'bottom-right',
+          autoClose: 1000,
+        })
+      }
+    } finally {
+      setIsConnecting(false)
+    }
+  }
+
+  const disconnectWallet = (): void => {
+    toast.success('Wallet disconnected successfully!', {
+      position: 'bottom-right',
+      autoClose: 1000,
+    })
+    setAccount(null)
+  }
+
+>>>>>>> 608b3c14c1abec167de1f58a928e55a8f66dff86
   const formatAddress = (address: string): string => {
     return `${address.slice(0, 6)}...${address.slice(-4)}`
   }
@@ -36,7 +140,7 @@ const Navbar: React.FC = () => {
   if (!isMounted) {
     return (
       <div>
-        <header className="flex items-center justify-between whitespace-nowrap border-b border-solid border-b-[#283039] px-10 py-3">
+        <header className="flex items-center justify-between whitespace-nowrap border-b border-solid border-b-[#2a2a2a] px-10 py-3 bg-[#0a0a0a]">
           <div className="flex items-center gap-4 text-white">
             <div className="size-4">
               <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -49,22 +153,22 @@ const Navbar: React.FC = () => {
               </svg>
             </div>
             <h2 className="text-white text-lg font-bold leading-tight tracking-[-0.015em]">
-              SubnetYield Core
+              SubnetYield <span className="text-[#00ffaa]">Core</span>
             </h2>
           </div>
           <div className="flex flex-1 justify-end gap-8">
             <div className="flex items-center gap-9">
-              <Link className="text-white text-sm font-medium leading-normal" href="/">
+              <Link className="text-[#aaa] text-sm font-medium leading-normal hover:text-[#00ffaa] transition-colors duration-300" href="/">
                 Dashboard
               </Link>
-              <Link className="text-white text-sm font-medium leading-normal" href="/yield-optimizer">
+              <Link className="text-[#aaa] text-sm font-medium leading-normal hover:text-[#00ffaa] transition-colors duration-300" href="/yield-optimizer">
                 Yield Optimizer
               </Link>
-              <Link className="text-white text-sm font-medium leading-normal" href="/portfolio">
+              <Link className="text-[#aaa] text-sm font-medium leading-normal hover:text-[#00ffaa] transition-colors duration-300" href="/portfolio">
                 Portfolio
               </Link>
             </div>
-            <div className="flex min-w-[84px] max-w-[480px] items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-[#283039] text-white text-sm font-bold leading-normal tracking-[0.015em]">
+            <div className="flex min-w-[84px] max-w-[480px] items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-[#111418] border border-[#2a2a2a] text-[#777] text-sm font-bold leading-normal tracking-[0.015em]">
               <span>Loading...</span>
             </div>
           </div>
@@ -75,7 +179,7 @@ const Navbar: React.FC = () => {
 
   return (
     <div>
-      <header className="flex items-center justify-between whitespace-nowrap border-b border-solid border-b-[#283039] px-10 py-3">
+      <header className="flex items-center justify-between whitespace-nowrap border-b border-solid border-b-[#2a2a2a] px-10 py-3 bg-[#0a0a0a]">
         <div className="flex items-center gap-4 text-white">
           <div className="size-4">
             <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -88,18 +192,18 @@ const Navbar: React.FC = () => {
             </svg>
           </div>
           <h2 className="text-white text-lg font-bold leading-tight tracking-[-0.015em]">
-            SubnetYield Core
+            Aave <span className="text-[#00ffaa]">Opt</span>
           </h2>
         </div>
         <div className="flex flex-1 justify-end gap-8">
           <div className="flex items-center gap-9">
-            <Link className="text-white text-sm font-medium leading-normal" href="/">
+            <Link className="text-[#aaa] text-sm font-medium leading-normal hover:text-[#00ffaa] hover:shadow-[0_0_10px_rgba(0,255,170,0.3)] transition-all duration-300 px-2 py-1 rounded" href="/">
               Dashboard
             </Link>
-            <Link className="text-white text-sm font-medium leading-normal" href="/yield-optimizer">
+            <Link className="text-[#aaa] text-sm font-medium leading-normal hover:text-[#00ffaa] hover:shadow-[0_0_10px_rgba(0,255,170,0.3)] transition-all duration-300 px-2 py-1 rounded" href="/yield-optimizer">
               Yield Optimizer
             </Link>
-            <Link className="text-white text-sm font-medium leading-normal" href="/portfolio">
+            <Link className="text-[#aaa] text-sm font-medium leading-normal hover:text-[#00ffaa] hover:shadow-[0_0_10px_rgba(0,255,170,0.3)] transition-all duration-300 px-2 py-1 rounded" href="/portfolio">
               Portfolio
             </Link>
           </div>
@@ -107,6 +211,7 @@ const Navbar: React.FC = () => {
           {/* Wallet Connection Section */}
           {isConnected && account ? (
             <div className="flex items-center gap-2">
+<<<<<<< HEAD
               {/* Network Status */}
               <div className={`flex items-center gap-2 rounded-lg px-3 py-2 ${isOnFujiTestnet ? 'bg-green-900/50 border border-green-600' : 'bg-red-900/50 border border-red-600'}`}>
                 <div className={`w-2 h-2 rounded-full ${isOnFujiTestnet ? 'bg-green-500' : 'bg-red-500'}`}></div>
@@ -118,6 +223,10 @@ const Navbar: React.FC = () => {
               {/* Account Address */}
               <div className="flex items-center gap-2 bg-[#283039] rounded-lg px-4 py-2">
                 <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+=======
+              <div className="flex items-center gap-2 bg-[#111418] border border-[#2a2a2a] hover:border-[#00ffaa] rounded-lg px-4 py-2 transition-all duration-300">
+                <div className="w-2 h-2 bg-[#00ffaa] rounded-full animate-pulse"></div>
+>>>>>>> 608b3c14c1abec167de1f58a928e55a8f66dff86
                 <span className="text-white text-sm font-medium">
                   {formatAddress(account)}
                 </span>
@@ -136,7 +245,7 @@ const Navbar: React.FC = () => {
               {/* Disconnect Button */}
               <button 
                 onClick={disconnectWallet}
-                className="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-red-600 hover:bg-red-700 text-white text-sm font-bold leading-normal tracking-[0.015em] transition-colors"
+                className="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-[#ff555520] text-[#ff5555] hover:bg-[#ff555530] hover:text-white hover:shadow-[0_0_15px_rgba(255,85,85,0.3)] text-sm font-bold leading-normal tracking-[0.015em] transition-all duration-300 border border-[#ff555520] hover:border-[#ff5555]"
               >
                 <span>Disconnect</span>
               </button>
@@ -145,14 +254,14 @@ const Navbar: React.FC = () => {
             <button 
               onClick={connectWallet}
               disabled={isConnecting}
-              className="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-[#283039] hover:bg-[#374151] disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-bold leading-normal tracking-[0.015em] transition-colors"
+              className="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-[#00ffaa20] text-[#00ffaa] hover:bg-[#00ffaa30] hover:text-white hover:shadow-[0_0_15px_rgba(0,255,170,0.3)] disabled:opacity-50 disabled:cursor-not-allowed text-sm font-bold leading-normal tracking-[0.015em] transition-all duration-300 border border-[#00ffaa20] hover:border-[#00ffaa]"
             >
               <span>{isConnecting ? 'Connecting...' : 'Connect Wallet'}</span>
             </button>
           )}
         </div>
       </header>
-      <ToastContainer transition={Bounce} theme="dark" autoClose={1000} /> {/* Set theme to dark to match the background color */}
+      <ToastContainer transition={Bounce} theme="dark" autoClose={1000} />
     </div>
   )
 }

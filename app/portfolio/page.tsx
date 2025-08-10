@@ -1,13 +1,25 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Bell, X } from 'lucide-react';
 import Navbar from '../Navbar';
 
-const TransactionModal = ({ isOpen, onClose }) => {
-  if (!isOpen) return null;
+interface Transaction {
+  type: string;
+  amount: string;
+  subnet: string;
+  timestamp: string;
+}
 
-  const transactions = [
+interface TransactionModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, onClose }) => {
+  if (!isOpen) return null; 
+
+  const transactions: Transaction[] = [
     {
       type: 'Deposit',
       amount: '+$1,000',
@@ -68,45 +80,45 @@ const TransactionModal = ({ isOpen, onClose }) => {
       subnet: 'Subnet C',
       timestamp: '2024-07-17 03:30 PM'
     }
-]
+  ];
 
   return (
     <div className="fixed inset-0 backdrop-blur-sm bg-opacity-100 flex items-center justify-center z-50 p-4">
-      <div className="bg-[#111418] rounded-lg max-w-4xl w-full max-h-[90vh] overflow-hidden">
-        <div className="flex items-center justify-between p-6 border-b border-[#3b4754]">
+      <div className="bg-[#111418] rounded-lg max-w-4xl w-full max-h-[90vh] overflow-hidden border border-[#2a2a2a]">
+        <div className="flex items-center justify-between p-6 border-b border-[#2a2a2a]">
           <div>
             <h2 className="text-white text-2xl font-bold">Transaction History</h2>
-            <p className="text-[#9cabba] text-sm mt-1">View your transaction history across different subnets.</p>
+            <p className="text-[#777] text-sm mt-1">View your transaction history across different subnets.</p>
           </div>
           <button
             onClick={onClose}
-            className="text-white hover:text-gray-300 p-2 hover:bg-[#283039] rounded-lg transition-colors"
+            className="text-white hover:text-[#00ffaa] p-2 hover:bg-[#1a1a1a] rounded-lg transition-all duration-300"
           >
             <X size={24} />
           </button>
         </div>
         
         <div className="p-6 overflow-auto max-h-105">
-          <div className="overflow-hidden rounded-lg border border-[#3b4754]">
+          <div className="overflow-hidden rounded-lg border border-[#2a2a2a] hover:border-[#00ffaa] transition-all duration-300">
             <table className="w-full">
               <thead>
-                <tr className="bg-[#1b2127]">
-                  <th className="px-4 py-3 text-left text-white text-sm font-medium">Type</th>
-                  <th className="px-4 py-3 text-left text-white text-sm font-medium">Amount</th>
-                  <th className="px-4 py-3 text-left text-white text-sm font-medium">Subnet</th>
-                  <th className="px-4 py-3 text-left text-white text-sm font-medium">Timestamp</th>
-                  <th className="px-4 py-3 text-left text-[#9cabba] text-sm font-medium">Details</th>
+                <tr className="bg-[#1a1a1a]">
+                  <th className="px-4 py-3 text-left text-[#aaa] text-sm font-medium">Type</th>
+                  <th className="px-4 py-3 text-left text-[#aaa] text-sm font-medium">Amount</th>
+                  <th className="px-4 py-3 text-left text-[#aaa] text-sm font-medium">Subnet</th>
+                  <th className="px-4 py-3 text-left text-[#aaa] text-sm font-medium">Timestamp</th>
+                  <th className="px-4 py-3 text-left text-[#aaa] text-sm font-medium">Details</th>
                 </tr>
               </thead>
               <tbody>
                 {transactions.map((transaction, index) => (
-                  <tr key={index} className="border-t border-[#3b4754] hover:bg-[#1a1f25] transition-colors">
+                  <tr key={index} className="border-t border-[#2a2a2a] hover:bg-[#1a1a1a] transition-colors duration-200">
                     <td className="h-[72px] px-4 py-2 text-white text-sm font-normal">{transaction.type}</td>
-                    <td className="h-[72px] px-4 py-2 text-[#9cabba] text-sm font-normal">{transaction.amount}</td>
-                    <td className="h-[72px] px-4 py-2 text-[#9cabba] text-sm font-normal">{transaction.subnet}</td>
-                    <td className="h-[72px] px-4 py-2 text-[#9cabba] text-sm font-normal">{transaction.timestamp}</td>
+                    <td className="h-[72px] px-4 py-2 text-[#777] text-sm font-normal">{transaction.amount}</td>
+                    <td className="h-[72px] px-4 py-2 text-[#777] text-sm font-normal">{transaction.subnet}</td>
+                    <td className="h-[72px] px-4 py-2 text-[#777] text-sm font-normal">{transaction.timestamp}</td>
                     <td className="h-[72px] px-4 py-2">
-                      <button className="text-[#9cabba] text-sm font-bold hover:text-white transition-colors">
+                      <button className="text-[#00ffaa] text-sm font-bold hover:text-white hover:shadow-[0_0_10px_rgba(0,255,170,0.3)] transition-all duration-300">
                         View
                       </button>
                     </td>
@@ -121,10 +133,34 @@ const TransactionModal = ({ isOpen, onClose }) => {
   );
 };
 
-const SubnetYieldPortfolio = () => {
-  const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
+const SubnetYieldPortfolio: React.FC = () => {
+  const [isTransactionModalOpen, setIsTransactionModalOpen] = useState<boolean>(false);
+  const [isClient, setIsClient] = useState<boolean>(false);
+  const cardRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-  const LogoIcon = () => (
+  // Ensure client-side hydration and animate cards
+  useEffect(() => {
+    setIsClient(true);
+    
+    const animateCards = () => {
+      cardRefs.current.forEach((card, index) => {
+        if (card) {
+          card.style.opacity = '0';
+          card.style.transform = 'translateY(20px)';
+          setTimeout(() => {
+            card.style.transition = `opacity 0.5s ease ${index * 0.1}s, transform 0.5s ease ${index * 0.1}s`;
+            card.style.opacity = '1';
+            card.style.transform = 'translateY(0)';
+          }, 100);
+        }
+      });
+    };
+
+    const timer = setTimeout(animateCards, 100);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const LogoIcon: React.FC = () => (
     <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-4 h-4">
       <path
         fillRule="evenodd"
@@ -135,7 +171,7 @@ const SubnetYieldPortfolio = () => {
     </svg>
   );
 
-  const PerformanceChart = () => (
+  const PerformanceChart: React.FC = () => (
     <div className="min-h-[180px] flex flex-col gap-8 py-4">
       <svg width="100%" height="148" viewBox="-3 0 478 150" fill="none" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
         <path
@@ -144,20 +180,20 @@ const SubnetYieldPortfolio = () => {
         />
         <path
           d="M0 109C18.1538 109 18.1538 21 36.3077 21C54.4615 21 54.4615 41 72.6154 41C90.7692 41 90.7692 93 108.923 93C127.077 93 127.077 33 145.231 33C163.385 33 163.385 101 181.538 101C199.692 101 199.692 61 217.846 61C236 61 236 45 254.154 45C272.308 45 272.308 121 290.462 121C308.615 121 308.615 149 326.769 149C344.923 149 344.923 1 363.077 1C381.231 1 381.231 81 399.385 81C417.538 81 417.538 129 435.692 129C453.846 129 453.846 25 472 25"
-          stroke="#9cabba"
+          stroke="#00ffaa"
           strokeWidth="3"
           strokeLinecap="round"
         />
         <defs>
           <linearGradient id="paint0_linear" x1="236" y1="1" x2="236" y2="149" gradientUnits="userSpaceOnUse">
-            <stop stopColor="#283039" />
-            <stop offset="1" stopColor="#283039" stopOpacity="0" />
+            <stop stopColor="#00ffaa20" />
+            <stop offset="1" stopColor="#00ffaa20" stopOpacity="0" />
           </linearGradient>
         </defs>
       </svg>
       <div className="flex justify-around">
         {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul'].map((month) => (
-          <p key={month} className="text-[#9cabba] text-[13px] font-bold leading-normal tracking-[0.015em]">
+          <p key={month} className="text-[#777] text-[13px] font-bold leading-normal tracking-[0.015em] hover:text-[#aaa] transition-colors duration-300">
             {month}
           </p>
         ))}
@@ -166,55 +202,67 @@ const SubnetYieldPortfolio = () => {
   );
 
   return (
-    <div className="relative flex w-full min-h-screen flex-col bg-[#111418]" style={{ fontFamily: 'Inter, "Noto Sans", sans-serif' }}>
+    <div 
+      className="relative flex w-full min-h-screen flex-col bg-[#0a0a0a] overflow-x-hidden" 
+      style={{ fontFamily: 'Inter, "Noto Sans", sans-serif' }}
+    >
       <div className="flex h-full grow flex-col">
         {/* Header */}
         <Navbar />
 
         {/* Main Content */}
-        <div className="px-40 flex flex-1 justify-center py-5">
+        <div className="px-4 md:px-40 flex flex-1 justify-center py-5">
           <div className="flex flex-col max-w-[960px] flex-1">
             {/* Page Header */}
-            <div className="flex flex-wrap justify-between gap-3 p-4">
-              <div className="flex min-w-72 flex-col gap-3">
-                <p className="text-white tracking-light text-[32px] font-bold leading-tight">Portfolio</p>
-                <p className="text-[#9cabba] text-sm font-normal leading-normal">
-                  View your asset balances, historical performance, and manage your investments across different subnets.
-                </p>
+            <div className="group">
+              <div className="flex flex-wrap justify-between gap-3 p-4">
+                <div className="flex min-w-72 flex-col gap-3">
+                  <h1 className="text-white tracking-light text-2xl md:text-[32px] font-bold leading-tight">
+                    Port<span className="text-[#00ffaa]">folio</span>
+                  </h1>
+                  <p className="text-[#777] text-sm font-normal leading-normal">
+                    View your asset balances, historical performance, and manage your investments across different subnets.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setIsTransactionModalOpen(true)}
+                  className="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-8 px-4 bg-[#00ffaa20] text-[#00ffaa] hover:bg-[#00ffaa30] hover:text-white hover:shadow-[0_0_15px_rgba(0,255,170,0.3)] text-sm font-medium leading-normal transition-all duration-300"
+                >
+                  <span className="truncate">View Transactions</span>
+                </button>
               </div>
-              <button
-                onClick={() => setIsTransactionModalOpen(true)}
-                className="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-8 px-4 bg-[#283039] text-white text-sm font-medium leading-normal hover:bg-[#3a4652] transition-colors"
-              >
-                <span className="truncate">View Transactions</span>
-              </button>
             </div>
 
             {/* Overview Section */}
-            <h2 className="text-white text-[22px] font-bold leading-tight tracking-[-0.015em] px-4 pb-3 pt-5">Overview</h2>
+            <div className="group" ref={el => cardRefs.current[0] = el}>
+              <h2 className="text-white text-xl md:text-[22px] font-bold leading-tight tracking-[-0.015em] px-4 pb-3 pt-5">
+                Overview
+                <span className="block h-0.5 w-0 bg-[#00ffaa] transition-all duration-500 group-hover:w-16 mt-1"></span>
+              </h2>
+            </div>
             
             {/* Overview Cards */}
-            <div className="flex flex-wrap gap-4 p-4">
-              <div className="flex min-w-[158px] flex-1 flex-col gap-2 rounded-lg p-6 bg-[#283039] hover:bg-[#2f3740] transition-colors">
-                <p className="text-white text-base font-medium leading-normal">Total Portfolio Value</p>
+            <div className="group flex flex-wrap gap-4 p-4" ref={el => cardRefs.current[1] = el}>
+              <div className="flex min-w-[158px] flex-1 flex-col gap-2 rounded-lg p-6 bg-[#111418] border border-[#2a2a2a] hover:border-[#00ffaa] hover: hover:bg-[#1a1a1a] transition-all duration-300">
+                <p className="text-[#aaa] text-base font-medium leading-normal">Total Portfolio Value</p>
                 <p className="text-white tracking-light text-2xl font-bold leading-tight">$12,345.67</p>
-                <p className="text-[#0bda5b] text-base font-medium leading-normal">+2.5%</p>
+                <p className="text-[#00ffaa] text-base font-medium leading-normal">+2.5%</p>
               </div>
-              <div className="flex min-w-[158px] flex-1 flex-col gap-2 rounded-lg p-6 bg-[#283039] hover:bg-[#2f3740] transition-colors">
-                <p className="text-white text-base font-medium leading-normal">Total Yield Earned</p>
+              <div className="flex min-w-[158px] flex-1 flex-col gap-2 rounded-lg p-6 bg-[#111418] border border-[#2a2a2a] hover:border-[#00ffaa] hover:bg-[#1a1a1a] transition-all duration-300">
+                <p className="text-[#aaa] text-base font-medium leading-normal">Total Yield Earned</p>
                 <p className="text-white tracking-light text-2xl font-bold leading-tight">$567.89</p>
-                <p className="text-[#0bda5b] text-base font-medium leading-normal">+1.2%</p>
+                <p className="text-[#00ffaa] text-base font-medium leading-normal">+1.2%</p>
               </div>
             </div>
 
             {/* Performance Chart */}
-            <div className="flex flex-wrap gap-4 px-4 py-6">
-              <div className="flex min-w-72 flex-1 flex-col gap-2 rounded-lg border border-[#3b4754] p-6 hover:border-[#4a5666] transition-colors">
-                <p className="text-white text-base font-medium leading-normal">Portfolio Performance</p>
+            <div className="group flex flex-wrap gap-4 px-4 py-6" ref={el => cardRefs.current[2] = el}>
+              <div className="flex min-w-72 flex-1 flex-col gap-2 rounded-lg border border-[#2a2a2a] bg-[#111418] p-6 hover:border-[#00ffaa] hover:bg-[#1a1a1a] transition-all duration-300">
+                <p className="text-[#aaa] text-base font-medium leading-normal">Portfolio Performance</p>
                 <p className="text-white tracking-light text-[32px] font-bold leading-tight truncate">$12,345.67</p>
                 <div className="flex gap-1">
-                  <p className="text-[#9cabba] text-base font-normal leading-normal">Last 30 Days</p>
-                  <p className="text-[#0bda5b] text-base font-medium leading-normal">+2.5%</p>
+                  <p className="text-[#777] text-base font-normal leading-normal">Last 30 Days</p>
+                  <p className="text-[#00ffaa] text-base font-medium leading-normal">+2.5%</p>
                 </div>
                 <PerformanceChart />
               </div>
