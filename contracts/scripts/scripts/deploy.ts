@@ -1,4 +1,3 @@
-// scripts/deploy-yieldhub.ts
 import { ethers } from "hardhat";
 import { Contract } from "ethers";
 
@@ -24,14 +23,13 @@ const NETWORK_CONFIG: { [key: string]: NetworkConfig } = {
     name: "Avalanche Fuji C-Chain",
     rpc: "https://api.avax-test.network/ext/bc/C/rpc",
     
-    // Real Aave V3 addresses on Fuji testnet
     aaveAddressesProvider: "0x1775ECC8362dB6CaB0c7A9C0957cF656A5276c29",
-    aaveDataProvider: "0x9546F673eF71Ff666ae66d01Fd6E7C6Dae5a9995",
+    aaveDataProvider: "0x0668EDE013c1c475724523409b8B6bE633469585", // 
     teleporterMessenger: "0x253b2784c75e510dD0fF1da844684a1aC0aa5fcf",
     
     supportedTokens: {
       USDC: {
-        address: "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E",
+        address: "0x5425890298aed601595a70AB815c96711a31Bc65", 
         decimals: 6
       },
       WAVAX: {
@@ -71,16 +69,29 @@ function getNetworkConfig(networkName: string): NetworkConfig {
   return config;
 }
 
-function validateAddresses(config: NetworkConfig): boolean {
+async function validateAddresses(config: NetworkConfig): Promise<boolean> {
   const requiredAddresses = [
-    config.aaveAddressesProvider,
-    config.aaveDataProvider,
-    config.teleporterMessenger
+    { name: "aaveAddressesProvider", address: config.aaveAddressesProvider },
+    { name: "aaveDataProvider", address: config.aaveDataProvider },
+    { name: "teleporterMessenger", address: config.teleporterMessenger }
   ];
   
-  for (const address of requiredAddresses) {
+  for (const { name, address } of requiredAddresses) {
     if (!address || address === "0x0000000000000000000000000000000000000000") {
-      console.warn(`Warning: Invalid or missing address in configuration`);
+      console.warn(`Warning: Invalid or missing address for ${name}`);
+      return false;
+    }
+    
+    // Check if contract exists on-chain
+    try {
+      const code = await ethers.provider.getCode(address);
+      if (code === "0x") {
+        console.warn(`Warning: No contract found at ${name}: ${address}`);
+        return false;
+      }
+      console.log(`✅ Validated ${name}: ${address}`);
+    } catch (error) {
+      console.warn(`Warning: Could not validate ${name}: ${address}`);
       return false;
     }
   }
@@ -98,19 +109,26 @@ async function main() {
   
   console.log(`📡 Deploying to network: ${networkName} (Chain ID: ${network.chainId})`);
   
+  if (networkName === "unknown") {
+    throw new Error(`Unsupported network with chain ID: ${network.chainId}`);
+  }
+  
   const config = getNetworkConfig(networkName);
   
   // Validate configuration
-  if (!validateAddresses(config)) {
+  console.log("\n🔍 Validating contract addresses...");
+  const addressesValid = await validateAddresses(config);
+  if (!addressesValid && networkName !== "localhost") {
     throw new Error("❌ Invalid network configuration. Please check addresses in config");
   }
   
   // Get deployer account
   const [deployer] = await ethers.getSigners();
-  console.log(`👤 Deploying with account: ${deployer.address}`);
+  const deployerAddress = await deployer.getAddress();
+  console.log(`👤 Deploying with account: ${deployerAddress}`);
   
   // Check deployer balance
-  const balance = await ethers.provider.getBalance(deployer.address);
+  const balance = await ethers.provider.getBalance(deployerAddress);
   console.log(`💰 Deployer balance: ${ethers.formatEther(balance)} AVAX`);
   
   if (balance < ethers.parseEther("0.1")) {
@@ -129,12 +147,14 @@ async function main() {
     
     const YieldHub = await ethers.getContractFactory("YieldHub");
     
-    const estimatedGas = await YieldHub.getDeployTransaction(
+    // Estimate gas for deployment
+    const deploymentTx = await YieldHub.getDeployTransaction(
       config.aaveAddressesProvider,
       config.aaveDataProvider,
       config.teleporterMessenger
-    ).then(tx => ethers.provider.estimateGas(tx));
+    );
     
+    const estimatedGas = await ethers.provider.estimateGas(deploymentTx);
     console.log(`⛽ Estimated gas: ${estimatedGas.toString()}`);
     
     const yieldHub = await YieldHub.deploy(
@@ -146,17 +166,18 @@ async function main() {
       }
     );
     
-    console.log(`⏳ Transaction hash: ${yieldHub.deploymentTransaction()?.hash}`);
+    const deployTx = yieldHub.deploymentTransaction();
+    console.log(`⏳ Transaction hash: ${deployTx?.hash}`);
     console.log("⏳ Waiting for deployment confirmation...");
     
     await yieldHub.waitForDeployment();
-    const contractAddress = await yieldHub.getAddress();
     
+    // ✅ FIXED: Safe address retrieval for Ethers.js v6
+    const contractAddress = yieldHub.target as string;
     console.log(`✅ YieldHub deployed to: ${contractAddress}`);
     
     // Wait for additional confirmations
     console.log("⏳ Waiting for additional confirmations...");
-    const deployTx = yieldHub.deploymentTransaction();
     if (deployTx) {
       await deployTx.wait(3);
     }
@@ -246,7 +267,7 @@ async function main() {
     console.log("=".repeat(50));
     console.log(`📋 Contract Address: ${contractAddress}`);
     console.log(`🌐 Network: ${networkName} (${config.chainId})`);
-    console.log(`💰 Deployer: ${deployer.address}`);
+    console.log(`💰 Deployer: ${deployerAddress}`);
     console.log(`⛽ Gas Used: ${gasUsedInfo}`);
     console.log(`🏦 Aave Provider: ${config.aaveAddressesProvider}`);
     console.log(`📊 Data Provider: ${config.aaveDataProvider}`);
@@ -280,7 +301,7 @@ async function main() {
       network: networkName,
       chainId: config.chainId,
       contractAddress: contractAddress,
-      deployer: deployer.address,
+      deployer: deployerAddress,
       deploymentHash: deployTx?.hash,
       timestamp: new Date().toISOString(),
       configuration: config

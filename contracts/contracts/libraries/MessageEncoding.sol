@@ -208,56 +208,45 @@ library MessageEncoding {
         return encodedMessage;
     }
 
-    // ============ DECODING FUNCTIONS ============
 
-    /**
-     * @notice Decodes a YieldRequest from message bytes
-     * @param encodedMessage The encoded message to decode
-     * @return request The decoded yield request
-     */
     function decodeYieldRequest(bytes memory encodedMessage) 
         internal 
-        pure 
+        view  // Changed from pure to view
         returns (DataTypes.YieldRequest memory request) 
     {
-        // Validate input
-        if (encodedMessage.length == 0) revert InvalidMessageFormat();
+        // Basic input check
+        if (encodedMessage.length < MIN_MESSAGE_SIZE) revert InvalidMessageFormat();
+
+        // Decode the message (abi.decode will revert if encodedMessage is malformed)
+        Message memory message = abi.decode(encodedMessage, (Message));
         
-        try {
-            // Decode the message
-            Message memory message = abi.decode(encodedMessage, (Message));
-            
-            // Validate message type and version
-            _validateMessageHeader(message.header, YIELD_REQUEST_TYPE);
-            
-            // Verify checksum
-            if (!_verifyChecksum(message.header, message.payload, message.checksum)) {
-                revert InvalidMessageFormat();
-            }
-            
-            // Decode the payload
-            (
-                address token,
-                address requester,
-                uint256 timestamp,
-                bytes32 requestId
-            ) = abi.decode(message.payload, (address, address, uint256, bytes32));
-            
-            // Create and validate the request
-            request = DataTypes.YieldRequest({
-                token: token,
-                requester: requester,
-                timestamp: timestamp,
-                requestId: requestId
-            });
-            
-            // Additional validation
-            if (!DataTypes.isValidRequest(request)) {
-                revert InvalidMessageFormat();
-            }
-            
-        } catch {
-            revert DecodingError();
+        // Validate message type and version
+        _validateMessageHeader(message.header, YIELD_REQUEST_TYPE);
+        
+        // Verify checksum
+        if (!_verifyChecksum(message.header, message.payload, message.checksum)) {
+            revert InvalidMessageFormat();
+        }
+        
+        // Decode the payload
+        (
+            address token,
+            address requester,
+            uint256 timestamp,
+            bytes32 requestId
+        ) = abi.decode(message.payload, (address, address, uint256, bytes32));
+        
+        // Create and validate the request
+        request = DataTypes.YieldRequest({
+            token: token,
+            requester: requester,
+            timestamp: timestamp,
+            requestId: requestId
+        });
+        
+        // Additional validation
+        if (!DataTypes.isValidRequest(request)) {
+            revert InvalidMessageFormat();
         }
         
         return request;
@@ -270,53 +259,48 @@ library MessageEncoding {
      */
     function decodeYieldResponse(bytes memory encodedMessage) 
         internal 
-        pure 
+        view  // Changed from pure to view
         returns (DataTypes.YieldResponse memory response) 
     {
-        // Validate input
-        if (encodedMessage.length == 0) revert InvalidMessageFormat();
+        // Basic input check
+        if (encodedMessage.length < MIN_MESSAGE_SIZE) revert InvalidMessageFormat();
+
+        // Decode the message
+        Message memory message = abi.decode(encodedMessage, (Message));
         
-        try {
-            // Decode the message
-            Message memory message = abi.decode(encodedMessage, (Message));
-            
-            // Validate message type and version
-            _validateMessageHeader(message.header, YIELD_RESPONSE_TYPE);
-            
-            // Verify checksum
-            if (!_verifyChecksum(message.header, message.payload, message.checksum)) {
-                revert InvalidMessageFormat();
-            }
-            
-            // Decode the payload
-            (
-                bytes32 requestId,
-                uint256 apyBps,
-                uint256 tvl,
-                bytes32 protocol,
-                uint256 timestamp,
-                bool success,
-                string memory errorMessage
-            ) = abi.decode(message.payload, (bytes32, uint256, uint256, bytes32, uint256, bool, string));
-            
-            // Create the response
-            response = DataTypes.YieldResponse({
-                requestId: requestId,
-                apyBps: apyBps,
-                tvl: tvl,
-                protocol: protocol,
-                timestamp: timestamp,
-                success: success,
-                errorMessage: errorMessage
-            });
-            
-            // Additional validation
-            if (!DataTypes.isValidResponse(response)) {
-                revert InvalidMessageFormat();
-            }
-            
-        } catch {
-            revert DecodingError();
+        // Validate message type and version
+        _validateMessageHeader(message.header, YIELD_RESPONSE_TYPE);
+        
+        // Verify checksum
+        if (!_verifyChecksum(message.header, message.payload, message.checksum)) {
+            revert InvalidMessageFormat();
+        }
+        
+        // Decode the payload
+        (
+            bytes32 requestId,
+            uint256 apyBps,
+            uint256 tvl,
+            bytes32 protocol,
+            uint256 timestamp,
+            bool success,
+            string memory errorMessage
+        ) = abi.decode(message.payload, (bytes32, uint256, uint256, bytes32, uint256, bool, string));
+        
+        // Create the response
+        response = DataTypes.YieldResponse({
+            requestId: requestId,
+            apyBps: apyBps,
+            tvl: tvl,
+            protocol: protocol,
+            timestamp: timestamp,
+            success: success,
+            errorMessage: errorMessage
+        });
+        
+        // Additional validation
+        if (!DataTypes.isValidResponse(response)) {
+            revert InvalidMessageFormat();
         }
         
         return response;
@@ -340,35 +324,32 @@ library MessageEncoding {
             uint256 timestamp
         ) 
     {
-        // Validate input
-        if (encodedMessage.length == 0) revert InvalidMessageFormat();
+        // Basic input check
+        if (encodedMessage.length < MIN_MESSAGE_SIZE) revert InvalidMessageFormat();
+
+        // Decode the message
+        Message memory message = abi.decode(encodedMessage, (Message));
         
-        try {
-            // Decode the message
-            Message memory message = abi.decode(encodedMessage, (Message));
-            
-            // Validate message type and version
-            _validateMessageHeader(message.header, BATCH_REQUEST_TYPE);
-            
-            // Verify checksum
-            if (!_verifyChecksum(message.header, message.payload, message.checksum)) {
-                revert InvalidMessageFormat();
-            }
-            
-            // Decode the payload
-            (tokens, requester, timestamp, batchId) = abi.decode(
-                message.payload, 
-                (address[], address, uint256, bytes32)
-            );
-            
-            // Validate decoded data
-            require(tokens.length > 0 && tokens.length <= DataTypes.MAX_BATCH_SIZE, "Invalid batch size");
-            require(requester != address(0), "Invalid requester");
-            require(batchId != bytes32(0), "Invalid batch ID");
-            
-        } catch {
-            revert DecodingError();
+        // Validate message type and version
+        _validateMessageHeader(message.header, BATCH_REQUEST_TYPE);
+        
+        // Verify checksum
+        if (!_verifyChecksum(message.header, message.payload, message.checksum)) {
+            revert InvalidMessageFormat();
         }
+        
+        // Decode the payload
+        (tokens, requester, timestamp, batchId) = abi.decode(
+            message.payload, 
+            (address[], address, uint256, bytes32)
+        );
+        
+        // Validate decoded data
+        if (tokens.length == 0 || tokens.length > DataTypes.MAX_BATCH_SIZE) revert InvalidMessageFormat();
+        if (requester == address(0)) revert InvalidMessageFormat();
+        if (batchId == bytes32(0)) revert InvalidMessageFormat();
+        
+        return (tokens, requester, batchId, timestamp);
     }
 
     // ============ UTILITY FUNCTIONS ============
@@ -387,12 +368,9 @@ library MessageEncoding {
             return bytes32(0);
         }
         
-        try {
-            Message memory message = abi.decode(encodedMessage, (Message));
-            return message.header.messageType;
-        } catch {
-            return bytes32(0);
-        }
+        // Decode (abi.decode will revert if malformed)
+        Message memory message = abi.decode(encodedMessage, (Message));
+        return message.header.messageType;
     }
 
     /**
@@ -409,12 +387,9 @@ library MessageEncoding {
             return 0;
         }
         
-        try {
-            Message memory message = abi.decode(encodedMessage, (Message));
-            return message.header.version;
-        } catch {
-            return 0;
-        }
+        // Decode (abi.decode will revert if malformed)
+        Message memory message = abi.decode(encodedMessage, (Message));
+        return message.header.version;
     }
 
     /**

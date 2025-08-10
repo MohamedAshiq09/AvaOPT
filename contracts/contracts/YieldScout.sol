@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.20;
 
 import "./interfaces/IERC20.sol";
 import "./interfaces/IDEXProtocol.sol";
 import "./interfaces/ITeleporterMessenger.sol";
 import "./interfaces/ITeleporterReceiver.sol";
+import "./libraries/DataTypes.sol";
+import "./libraries/MessageEncoding.sol";
 
 /**
  * @title YieldScout
@@ -15,6 +17,10 @@ contract YieldScout is ITeleporterReceiver {
     // State Variables
     ITeleporterMessenger public immutable teleporterMessenger;
     IDEXProtocol public immutable localProtocol;
+    
+    // Security: Only accept messages from authorized C-Chain YieldHub
+    bytes32 public immutable AUTHORIZED_SOURCE_CHAIN; // C-Chain blockchain ID
+    address public immutable AUTHORIZED_HUB_ADDRESS;  // YieldHub address
     
     // Supported tokens and their yield data
     mapping(address => uint256) public localAPY;
@@ -63,11 +69,17 @@ contract YieldScout is ITeleporterReceiver {
     constructor(
         address _teleporterMessenger,
         address _localProtocol,
-        address[] memory _supportedTokens
+        address[] memory _supportedTokens,
+        bytes32 _authorizedSourceChain,  // C-Chain blockchain ID
+        address _authorizedHubAddress    // YieldHub contract address
     ) {
         teleporterMessenger = ITeleporterMessenger(_teleporterMessenger);
         localProtocol = IDEXProtocol(_localProtocol);
         owner = msg.sender;
+        
+        // Set authorized source chain and hub address
+        AUTHORIZED_SOURCE_CHAIN = _authorizedSourceChain;
+        AUTHORIZED_HUB_ADDRESS = _authorizedHubAddress;
         
         // Initialize supported tokens
         for (uint i = 0; i < _supportedTokens.length; i++) {
@@ -87,22 +99,39 @@ contract YieldScout is ITeleporterReceiver {
         address originSenderAddress,
         bytes calldata message
     ) external onlyTeleporter {
-        // Decode the yield request message
-        (bytes32 requestId, address token, address responseContract) = abi.decode(
-            message,
-            (bytes32, address, address)
-        );
-        
-        // Prevent replay attacks
-        if (processedRequests[requestId]) {
-            revert RequestAlreadyProcessed(requestId);
+        // ✅ SECURITY: Validate message source
+        require(sourceBlockchainID == AUTHORIZED_SOURCE_CHAIN, "Unauthorized source chain");
+        require(originSenderAddress == AUTHORIZED_HUB_ADDRESS, "Unauthorized hub address");
+        // Decode the yield request message using MessageEncoding library with error handling
+        try this.decodeYieldRequestSafe(message) returns (DataTypes.YieldRequest memory request) {
+            // Prevent replay attacks
+            if (processedRequests[request.requestId]) {
+                revert RequestAlreadyProcessed(request.requestId);
+            }
+            processedRequests[request.requestId] = true;
+            
+            // Validate request is from expected sender
+            require(request.requester == originSenderAddress, "Invalid request sender");
+            
+            emit YieldDataRequested(request.requestId, request.token, request.requester);
+            
+            // Process the yield request
+            _processYieldRequest(request.requestId, request.token, sourceBlockchainID, originSenderAddress);
+            
+        } catch {
+            // Handle malformed messages by sending error response
+            bytes32 errorRequestId = keccak256(abi.encodePacked(block.timestamp, originSenderAddress));
+            _sendErrorResponse(errorRequestId, sourceBlockchainID, originSenderAddress, "Malformed message format");
         }
-        processedRequests[requestId] = true;
-        
-        emit YieldDataRequested(requestId, token, originSenderAddress);
-        
-        // Process the yield request
-        _processYieldRequest(requestId, token, sourceBlockchainID, responseContract);
+    }
+    
+    /**
+     * @dev Safe wrapper for decoding yield requests with proper error handling
+     * @param message Encoded message to decode
+     * @return request Decoded yield request
+     */
+    function decodeYieldRequestSafe(bytes calldata message) external view returns (DataTypes.YieldRequest memory request) {
+        return MessageEncoding.decodeYieldRequest(message);
     }
     
     /**
@@ -191,18 +220,22 @@ contract YieldScout is ITeleporterReceiver {
         bytes32 destinationChainId,
         address responseContract
     ) internal {
-        // Encode response payload
-        bytes memory responsePayload = abi.encode(
-            requestId,
-            token,
-            apy,
-            protocolCache[token].tvl,
-            protocolCache[token].protocolName,
-            block.timestamp
-        );
+        // Create properly formatted YieldResponse
+        DataTypes.YieldResponse memory response = DataTypes.YieldResponse({
+            requestId: requestId,
+            apyBps: apy,
+            tvl: protocolCache[token].tvl,
+            protocol: keccak256(abi.encodePacked(protocolCache[token].protocolName)),
+            timestamp: block.timestamp,
+            success: true,
+            errorMessage: ""
+        });
         
-        // Send via Teleporter
-        teleporterMessenger.sendCrossChainMessage(
+        // Encode response using MessageEncoding library
+        bytes memory responsePayload = MessageEncoding.encodeYieldResponse(response);
+        
+        // Send via Teleporter with proper error handling
+        try teleporterMessenger.sendCrossChainMessage(
             TeleporterMessageInput({
                 destinationBlockchainID: destinationChainId,
                 destinationAddress: responseContract,
@@ -210,13 +243,16 @@ contract YieldScout is ITeleporterReceiver {
                     feeTokenAddress: address(0),
                     amount: 0
                 }),
-                requiredGasLimit: 200000,
+                requiredGasLimit: 500000, // Sufficient for complex operations and response handling
                 allowedRelayerAddresses: new address[](0),
                 message: responsePayload
             })
-        );
-        
-        emit YieldDataSent(requestId, token, apy);
+        ) returns (bytes32 messageId) {
+            emit YieldDataSent(requestId, token, apy);
+        } catch {
+            // Send error response if main response fails
+            _sendErrorResponse(requestId, destinationChainId, responseContract, "Failed to get protocol data");
+        }
     }
     
     /**
@@ -281,6 +317,49 @@ contract YieldScout is ITeleporterReceiver {
         return _getLocalAPY(token);
     }
     
+    /**
+     * @dev Sends error response back to C-Chain when protocol data fails
+     * @param requestId Original request ID
+     * @param destinationChainId Chain ID to send to
+     * @param responseContract Contract to send response to
+     * @param errorMessage Error description
+     */
+    function _sendErrorResponse(
+        bytes32 requestId,
+        bytes32 destinationChainId,
+        address responseContract,
+        string memory errorMessage
+    ) internal {
+        // Create error response
+        DataTypes.YieldResponse memory errorResponse = DataTypes.YieldResponse({
+            requestId: requestId,
+            apyBps: 0,
+            tvl: 0,
+            protocol: bytes32(0),
+            timestamp: block.timestamp,
+            success: false,
+            errorMessage: errorMessage
+        });
+        
+        // Encode error response
+        bytes memory errorPayload = MessageEncoding.encodeYieldResponse(errorResponse);
+        
+        // Send error response (no try-catch to avoid infinite loops)
+        teleporterMessenger.sendCrossChainMessage(
+            TeleporterMessageInput({
+                destinationBlockchainID: destinationChainId,
+                destinationAddress: responseContract,
+                feeInfo: TeleporterFeeInfo({
+                    feeTokenAddress: address(0),
+                    amount: 0
+                }),
+                requiredGasLimit: 300000, // Sufficient for error response handling
+                allowedRelayerAddresses: new address[](0),
+                message: errorPayload
+            })
+        );
+    }
+
     /**
      * @dev Emergency function to update owner
      * @param newOwner New owner address
