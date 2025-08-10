@@ -1,5 +1,9 @@
 import React from 'react';
 import Navbar from './Navbar';
+import YieldDataCard from './components/YieldDataCard';
+import YieldSummaryTable from './components/YieldSummaryTable';
+import { useWeb3 } from './lib/Web3Context';
+import { CONTRACT_CONFIG } from './lib/web3-config';
 
 interface SubnetData {
   name: string;
@@ -26,6 +30,56 @@ const MetricCard: React.FC<MetricCardProps> = ({ title, value, change, isPositiv
 );
 
 const SubnetYieldDashboard: React.FC = () => {
+  const { 
+    tokenYieldData, 
+    supportedTokens, 
+    isConnected, 
+    chainId, 
+    isLoadingData,
+    autoRefresh,
+    setAutoRefresh
+  } = useWeb3();
+
+  // Calculate aggregated metrics from real data
+  const calculateTotalTVL = () => {
+    let total = 0n;
+    supportedTokens.forEach(token => {
+      const data = tokenYieldData[token];
+      if (data && !data.error) {
+        total += data.rawTVL;
+      }
+    });
+    return total;
+  };
+
+  const calculateAverageAPY = () => {
+    let totalAPY = 0n;
+    let count = 0;
+    supportedTokens.forEach(token => {
+      const data = tokenYieldData[token];
+      if (data && !data.error && data.rawAPY > 0) {
+        totalAPY += data.rawAPY;
+        count++;
+      }
+    });
+    return count > 0 ? totalAPY / BigInt(count) : 0n;
+  };
+
+  const formatTVLFromBigInt = (tvl: bigint) => {
+    const tvlNum = Number(tvl) / 1e18;
+    if (tvlNum >= 1e9) return `$${(tvlNum / 1e9).toFixed(2)}B`;
+    if (tvlNum >= 1e6) return `$${(tvlNum / 1e6).toFixed(2)}M`;
+    if (tvlNum >= 1e3) return `$${(tvlNum / 1e3).toFixed(2)}K`;
+    return `$${tvlNum.toFixed(2)}`;
+  };
+
+  const formatAPYFromBps = (bps: bigint) => {
+    return `${(Number(bps) / 100).toFixed(2)}%`;
+  };
+
+  const totalTVL = calculateTotalTVL();
+  const averageAPY = calculateAverageAPY();
+
   const subnetData: SubnetData[] = [
     { name: 'Subnet A', pool: 'Pool X', yield: '5.2%', status: 'Active' },
     { name: 'Subnet B', pool: 'Pool Y', yield: '4.8%', status: 'Active' },
@@ -55,33 +109,61 @@ const SubnetYieldDashboard: React.FC = () => {
             {/* Page Header */}
             <div className="flex flex-wrap justify-between gap-3 p-4">
               <div className="flex min-w-72 flex-col gap-3">
-                <p className="text-white tracking-light text-[32px] font-bold leading-tight">Dashboard</p>
-                <p className="text-[#9cabba] text-sm font-normal leading-normal">
-                  Overview of your SubnetYield Core performance and key metrics.
+                <p className="text-white tracking-light text-[32px] font-bold leading-tight">
+                  Real-Time Yield Dashboard
                 </p>
+                <p className="text-[#9cabba] text-sm font-normal leading-normal">
+                  Live Aave yield data from Avalanche Fuji testnet. 
+                  {isConnected && chainId === 43113 
+                    ? ' Connected to Fuji testnet.' 
+                    : ' Connect to Fuji testnet for live data.'}
+                </p>
+              </div>
+              
+              {/* Auto-refresh toggle */}
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-2 text-white text-sm">
+                  <input
+                    type="checkbox"
+                    checked={autoRefresh}
+                    onChange={(e) => setAutoRefresh(e.target.checked)}
+                    className="rounded"
+                  />
+                  Auto-refresh
+                </label>
               </div>
             </div>
 
-            {/* Metrics Cards */}
+            {/* Real-Time Metrics Cards */}
             <div className="flex flex-wrap gap-4 p-4">
               <MetricCard
                 title="Total Value Locked (TVL)"
-                value="$12.5M"
-                change="+2.3%"
+                value={isLoadingData ? "Loading..." : formatTVLFromBigInt(totalTVL)}
+                change={isConnected && chainId === 43113 ? "Live Data" : "Connect for Live Data"}
                 isPositive={true}
               />
               <MetricCard
-                title="Available Yields"
-                value="15.2%"
-                change="-1.1%"
-                isPositive={false}
-              />
-              <MetricCard
-                title="Portfolio Performance"
-                value="+8.5%"
-                change="+0.7%"
+                title="Average Aave APY"
+                value={isLoadingData ? "Loading..." : formatAPYFromBps(averageAPY)}
+                change={isConnected && chainId === 43113 ? "Real-time" : "Connect Wallet"}
                 isPositive={true}
               />
+              <MetricCard
+                title="Network Status"
+                value={isConnected ? (chainId === 43113 ? "Fuji Connected" : `Chain ${chainId}`) : "Disconnected"}
+                change={isConnected && chainId === 43113 ? "Ready" : "Action Required"}
+                isPositive={isConnected && chainId === 43113}
+              />
+            </div>
+
+            {/* Real-Time Yield Data Cards */}
+            <h2 className="text-white text-[22px] font-bold leading-tight tracking-[-0.015em] px-4 pb-3 pt-5">
+              Live Token Yields
+            </h2>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 px-4 py-3">
+              {supportedTokens.map(tokenAddress => (
+                <YieldDataCard key={tokenAddress} tokenAddress={tokenAddress} />
+              ))}
             </div>
 
             {/* TVL Chart */}
@@ -112,52 +194,8 @@ const SubnetYieldDashboard: React.FC = () => {
               </div>
             </div>
 
-            {/* Yield Summary Table */}
-            <h2 className="text-white text-[22px] font-bold leading-tight tracking-[-0.015em] px-4 pb-3 pt-5">
-              Yield Summary
-            </h2>
-            <div className="px-4 py-3">
-              <div className="flex overflow-hidden rounded-lg border border-[#3b4754] bg-[#111418]">
-                <table className="flex-1">
-                  <thead>
-                    <tr className="bg-[#1b2127]">
-                      <th className="px-4 py-3 text-left text-white w-[400px] text-sm font-medium leading-normal">
-                        Subnet
-                      </th>
-                      <th className="px-4 py-3 text-left text-white w-[400px] text-sm font-medium leading-normal">
-                        Pool
-                      </th>
-                      <th className="px-4 py-3 text-left text-white w-[400px] text-sm font-medium leading-normal">
-                        Yield
-                      </th>
-                      <th className="px-4 py-3 text-left text-white w-60 text-sm font-medium leading-normal">
-                        Status
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {subnetData.map((subnet, index) => (
-                      <tr key={index} className="border-t border-t-[#3b4754]">
-                        <td className="h-[72px] px-4 py-2 w-[400px] text-white text-sm font-normal leading-normal">
-                          {subnet.name}
-                        </td>
-                        <td className="h-[72px] px-4 py-2 w-[400px] text-[#9cabba] text-sm font-normal leading-normal">
-                          {subnet.pool}
-                        </td>
-                        <td className="h-[72px] px-4 py-2 w-[400px] text-[#9cabba] text-sm font-normal leading-normal">
-                          {subnet.yield}
-                        </td>
-                        <td className="h-[72px] px-4 py-2 w-60 text-sm font-normal leading-normal">
-                          <button className="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-8 px-4 bg-[#283039] text-white text-sm font-medium leading-normal w-full">
-                            <span className="truncate">{subnet.status}</span>
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            {/* Real-Time Yield Summary Table */}
+            <YieldSummaryTable />
 
             {/* Portfolio Chart */}
             <h2 className="text-white text-[22px] font-bold leading-tight tracking-[-0.015em] px-4 pb-3 pt-5">

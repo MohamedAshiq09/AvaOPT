@@ -2,115 +2,35 @@
 
 import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { ToastContainer, toast } from 'react-toastify'
+import { ToastContainer } from 'react-toastify'
 import { Bounce } from 'react-toastify' 
 import 'react-toastify/dist/ReactToastify.css'
+import { useWeb3 } from './lib/Web3Context'
 
 const Navbar: React.FC = () => {
-  const [account, setAccount] = useState<string | null>(null)
-  const [isConnecting, setIsConnecting] = useState<boolean>(false)
   const [isMounted, setIsMounted] = useState<boolean>(false)
+  const {
+    account,
+    isConnected,
+    isConnecting,
+    chainId,
+    connectWallet,
+    disconnectWallet,
+    switchToFuji
+  } = useWeb3()
 
   useEffect(() => {
     setIsMounted(true)
   }, [])
 
-  const isMetaMaskInstalled = (): boolean => {
-    return typeof window !== 'undefined' && typeof window.ethereum !== 'undefined'
-  }
-
-  useEffect(() => {
-    if (!isMounted) return
-
-    const checkConnection = async () => {
-      if (isMetaMaskInstalled()) {
-        try {
-          const accounts = await window.ethereum.request({ method: 'eth_accounts' })
-          if (accounts.length > 0) {
-            setAccount(accounts[0])
-          }
-        } catch (error) {
-          console.error('Error checking connection:', error)
-        }
-      }
-    }
-
-    checkConnection()
-
-    if (isMetaMaskInstalled()) {
-      const handleAccountsChanged = (accounts: string[]) => {
-        if (accounts.length > 0) {
-          setAccount(accounts[0])
-        } else {
-          setAccount(null)
-        }
-      }
-
-      window.ethereum.on('accountsChanged', handleAccountsChanged)
-
-      return () => {
-        if (window.ethereum.removeListener) {
-          window.ethereum.removeListener('accountsChanged', handleAccountsChanged)
-        }
-      }
-    }
-  }, [isMounted])
-
-  const connectWallet = async () => {
-    if (!isMetaMaskInstalled()) {
-      toast.error('MetaMask is not installed. Please install MetaMask to continue.', {
-        position: 'bottom-right',
-        autoClose: 1000,
-      })
-      return
-    }
-
-    setIsConnecting(true)
-    try {
-      const connectPromise = window.ethereum.request({
-        method: 'eth_requestAccounts',
-      })
-      toast.promise(connectPromise, {
-        pending: {
-          render: 'Connecting to MetaMask...',
-          position: 'top-right',
-          autoClose: 1000,
-        },
-        success: {
-          render: 'Wallet connected successfully!',
-          position: 'top-right',
-          autoClose: 1000,
-        },
-        error: {
-          render: 'Error connecting to MetaMask. Please try again.',
-          position: 'bottom-right',
-          autoClose: 1000,
-        },
-      })
-      const accounts = await connectPromise
-      setAccount(accounts[0])
-    } catch (error: any) {
-      if (error.code === 4001) {
-        toast.warn('Please connect to MetaMask.', {
-          position: 'bottom-right',
-          autoClose: 1000,
-        })
-      }
-    } finally {
-      setIsConnecting(false)
-    }
-  }
-
-  const disconnectWallet = () => {
-    toast.success('Wallet disconnected successfully!', {
-      position: 'bottom-right',
-      autoClose: 1000,
-    })
-    setAccount(null)
-  }
-
   const formatAddress = (address: string): string => {
     return `${address.slice(0, 6)}...${address.slice(-4)}`
+  }
+
+  const isOnFujiTestnet = chainId === 43113
+
+  const handleSwitchToFuji = async () => {
+    await switchToFuji()
   }
 
   if (!isMounted) {
@@ -185,14 +105,35 @@ const Navbar: React.FC = () => {
           </div>
           
           {/* Wallet Connection Section */}
-          {account ? (
+          {isConnected && account ? (
             <div className="flex items-center gap-2">
+              {/* Network Status */}
+              <div className={`flex items-center gap-2 rounded-lg px-3 py-2 ${isOnFujiTestnet ? 'bg-green-900/50 border border-green-600' : 'bg-red-900/50 border border-red-600'}`}>
+                <div className={`w-2 h-2 rounded-full ${isOnFujiTestnet ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                <span className="text-white text-xs font-medium">
+                  {isOnFujiTestnet ? 'Fuji' : `Chain ${chainId}`}
+                </span>
+              </div>
+              
+              {/* Account Address */}
               <div className="flex items-center gap-2 bg-[#283039] rounded-lg px-4 py-2">
                 <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                 <span className="text-white text-sm font-medium">
                   {formatAddress(account)}
                 </span>
               </div>
+
+              {/* Switch Network Button */}
+              {!isOnFujiTestnet && (
+                <button 
+                  onClick={handleSwitchToFuji}
+                  className="flex items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-orange-600 hover:bg-orange-700 text-white text-sm font-bold leading-normal tracking-[0.015em] transition-colors"
+                >
+                  <span>Switch to Fuji</span>
+                </button>
+              )}
+
+              {/* Disconnect Button */}
               <button 
                 onClick={disconnectWallet}
                 className="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-red-600 hover:bg-red-700 text-white text-sm font-bold leading-normal tracking-[0.015em] transition-colors"

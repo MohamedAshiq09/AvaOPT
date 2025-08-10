@@ -27,13 +27,26 @@ struct TeleporterMessageInput {
  */
 interface ITeleporterMessenger {
     /**
-     * @dev Send a cross-chain message
+     * @dev Send a cross-chain message (compatibility with different versions)
+     * @param destinationBlockchainID Target blockchain ID
+     * @param destinationAddress Target contract address
+     * @param message Encoded message payload
+     * @return messageID Unique identifier for the sent message
+     */
+    function sendCrossChainMessage(
+        bytes32 destinationBlockchainID,
+        address destinationAddress,
+        bytes calldata message
+    ) external payable returns (bytes32 messageID);
+    
+    /**
+     * @dev Send a cross-chain message with full parameters
      * @param messageInput Message input parameters
      * @return messageID Unique identifier for the sent message
      */
     function sendCrossChainMessage(
         TeleporterMessageInput calldata messageInput
-    ) external returns (bytes32 messageID);
+    ) external payable returns (bytes32 messageID);
     
     /**
      * @dev Get the current message ID
