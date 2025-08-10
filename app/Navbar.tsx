@@ -30,103 +30,6 @@ const Navbar: React.FC = () => {
     setIsMounted(true)
   }, [])
 
-<<<<<<< HEAD
-=======
-  const isMetaMaskInstalled = (): boolean => {
-    return typeof window !== 'undefined' && typeof window.ethereum !== 'undefined'
-  }
-
-  useEffect(() => {
-    if (!isMounted) return
-
-    const checkConnection = async (): Promise<void> => {
-      if (isMetaMaskInstalled()) {
-        try {
-          const accounts: string[] = await window.ethereum.request({ method: 'eth_accounts' })
-          if (accounts.length > 0) {
-            setAccount(accounts[0])
-          }
-        } catch (error) {
-          console.error('Error checking connection:', error)
-        }
-      }
-    }
-
-    checkConnection()
-
-    if (isMetaMaskInstalled()) {
-      const handleAccountsChanged = (accounts: string[]): void => {
-        if (accounts.length > 0) {
-          setAccount(accounts[0])
-        } else {
-          setAccount(null)
-        }
-      }
-
-      window.ethereum.on('accountsChanged', handleAccountsChanged)
-
-      return () => {
-        if (window.ethereum.removeListener) {
-          window.ethereum.removeListener('accountsChanged', handleAccountsChanged)
-        }
-      }
-    }
-  }, [isMounted])
-
-  const connectWallet = async (): Promise<void> => {
-    if (!isMetaMaskInstalled()) {
-      toast.error('MetaMask is not installed. Please install MetaMask to continue.', {
-        position: 'bottom-right',
-        autoClose: 1000,
-      })
-      return
-    }
-
-    setIsConnecting(true)
-    try {
-      const connectPromise = window.ethereum.request({
-        method: 'eth_requestAccounts',
-      })
-      toast.promise(connectPromise, {
-        pending: {
-          render: 'Connecting to MetaMask...',
-          position: 'top-right',
-          autoClose: 1000,
-        },
-        success: {
-          render: 'Wallet connected successfully!',
-          position: 'top-right',
-          autoClose: 1000,
-        },
-        error: {
-          render: 'Error connecting to MetaMask. Please try again.',
-          position: 'bottom-right',
-          autoClose: 1000,
-        },
-      })
-      const accounts: string[] = await connectPromise
-      setAccount(accounts[0])
-    } catch (error: any) {
-      if (error.code === 4001) {
-        toast.warn('Please connect to MetaMask.', {
-          position: 'bottom-right',
-          autoClose: 1000,
-        })
-      }
-    } finally {
-      setIsConnecting(false)
-    }
-  }
-
-  const disconnectWallet = (): void => {
-    toast.success('Wallet disconnected successfully!', {
-      position: 'bottom-right',
-      autoClose: 1000,
-    })
-    setAccount(null)
-  }
-
->>>>>>> 608b3c14c1abec167de1f58a928e55a8f66dff86
   const formatAddress = (address: string): string => {
     return `${address.slice(0, 6)}...${address.slice(-4)}`
   }
@@ -211,7 +114,6 @@ const Navbar: React.FC = () => {
           {/* Wallet Connection Section */}
           {isConnected && account ? (
             <div className="flex items-center gap-2">
-<<<<<<< HEAD
               {/* Network Status */}
               <div className={`flex items-center gap-2 rounded-lg px-3 py-2 ${isOnFujiTestnet ? 'bg-green-900/50 border border-green-600' : 'bg-red-900/50 border border-red-600'}`}>
                 <div className={`w-2 h-2 rounded-full ${isOnFujiTestnet ? 'bg-green-500' : 'bg-red-500'}`}></div>
@@ -223,10 +125,6 @@ const Navbar: React.FC = () => {
               {/* Account Address */}
               <div className="flex items-center gap-2 bg-[#283039] rounded-lg px-4 py-2">
                 <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-=======
-              <div className="flex items-center gap-2 bg-[#111418] border border-[#2a2a2a] hover:border-[#00ffaa] rounded-lg px-4 py-2 transition-all duration-300">
-                <div className="w-2 h-2 bg-[#00ffaa] rounded-full animate-pulse"></div>
->>>>>>> 608b3c14c1abec167de1f58a928e55a8f66dff86
                 <span className="text-white text-sm font-medium">
                   {formatAddress(account)}
                 </span>
