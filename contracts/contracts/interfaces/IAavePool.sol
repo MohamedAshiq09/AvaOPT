@@ -77,4 +77,26 @@ interface IAavePool {
      * @return The list of reserves
      */
     function getReservesList() external view returns (address[] memory);
+
+    /**
+     * @notice Returns the user account data across all the reserves
+     * @param user The address of the user
+     * @return totalCollateralETH The total collateral in ETH of the user
+     * @return totalDebtETH The total debt in ETH of the user
+     * @return availableBorrowsETH The borrowing power left of the user
+     * @return currentLiquidationThreshold The liquidation threshold of the user
+     * @return ltv The loan to value of the user
+     * @return healthFactor The current health factor of the user
+     */
+    function getUserAccountData(address user)
+        external
+        view
+        returns (
+            uint256 totalCollateralETH,
+            uint256 totalDebtETH,
+            uint256 availableBorrowsETH,
+            uint256 currentLiquidationThreshold,
+            uint256 ltv,
+            uint256 healthFactor
+        );
 }

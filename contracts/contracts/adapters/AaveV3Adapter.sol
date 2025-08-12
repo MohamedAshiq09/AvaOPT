@@ -91,7 +91,6 @@ contract AaveV3Adapter {
      */
     function getTokenReserveData(address token) 
         external 
-        view 
         returns (TokenReserveData memory reserveData) 
     {
         try dataProvider.getReserveData(token) returns (
@@ -160,7 +159,6 @@ contract AaveV3Adapter {
      */
     function getEnhancedAPYData(address token)
         external
-        view
         returns (
             uint256 currentAPY,
             uint256 borrowAPY,
@@ -191,7 +189,6 @@ contract AaveV3Adapter {
      */
     function getUserAccountData(address user)
         external
-        view
         returns (UserAccountData memory accountData)
     {
         try pool.getUserAccountData(user) returns (
@@ -296,7 +293,6 @@ contract AaveV3Adapter {
         uint256 timeHorizon
     )
         external
-        view
         returns (uint256 projectedEarnings, uint256 effectiveAPY)
     {
         TokenReserveData memory data = this.getTokenReserveData(token);
@@ -327,7 +323,6 @@ contract AaveV3Adapter {
      */
     function getRiskMetrics(address token)
         external
-        view
         returns (
             uint256 riskScore,
             uint256 liquidityRisk,
